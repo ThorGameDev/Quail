@@ -53,10 +53,8 @@ enum Token
 
     // control
     tok_if = -6,
-    tok_then = -7,
-    tok_else = -8,
-    tok_for = -9,
-    tok_in = -10,
+    tok_else = -7,
+    tok_for = -8,
 };
 
 static std::string IdentifierStr; //Filled in if tok_identifier
@@ -83,14 +81,10 @@ static int gettok()
             return tok_extern;
         if (IdentifierStr == "if")
             return tok_if;
-        if (IdentifierStr == "then")
-            return tok_then;
         if (IdentifierStr == "else")
             return tok_else;
         if (IdentifierStr == "for")
             return tok_for;
-        if (IdentifierStr == "in")
-            return tok_in;
 
         return tok_identifier;
     }
@@ -329,15 +323,19 @@ static std::unique_ptr<ExprAST> ParseIfExpr()
 {
     getNextToken(); // eat the if.
 
+    if (CurTok != '(')
+        return LogError("Expected '('");
+    getNextToken(); // Eat the '('
+
     //condition.
     auto Cond = ParseExpression();
     if (!Cond)
         return nullptr;
 
-    if (CurTok != tok_then)
-        return LogError("expected then");
-    getNextToken(); // eat the then
-    
+    if (CurTok != ')')
+        return LogError("Expected ')'");
+    getNextToken(); // Eat the ')'
+
     auto Then = ParseExpression();
     if (!Then)
         return nullptr;
@@ -357,6 +355,10 @@ static std::unique_ptr<ExprAST> ParseForExpr()
 {
     getNextToken(); // eat the for.
 
+    if (CurTok != '(')
+        return LogError("Expected '('");
+    getNextToken(); // Eat the '('
+
     if (CurTok != tok_identifier)
         return LogError("expected identifier after for");
 
@@ -370,8 +372,8 @@ static std::unique_ptr<ExprAST> ParseForExpr()
     auto Start = ParseExpression();
     if (!Start)
         return nullptr;
-    if (CurTok != ',')
-        return LogError("expected ',' after for start value");
+    if (CurTok != ';')
+        return LogError("expected ';' after for start value");
     getNextToken();
 
     auto End = ParseExpression();
@@ -380,7 +382,7 @@ static std::unique_ptr<ExprAST> ParseForExpr()
 
     // The step value is optional.
     std::unique_ptr<ExprAST> Step;
-    if (CurTok == ',') 
+    if (CurTok == ';') 
     {
         getNextToken();
         Step = ParseExpression();
@@ -388,9 +390,9 @@ static std::unique_ptr<ExprAST> ParseForExpr()
             return nullptr;
     }
 
-    if (CurTok != tok_in)
-        return LogError("expected 'in' after for");
-    getNextToken(); // eat 'in'
+    if (CurTok != ')')
+        return LogError("Expected ')'");
+    getNextToken(); // Eat the ')'
 
     auto Body = ParseExpression();
     if (!Body)

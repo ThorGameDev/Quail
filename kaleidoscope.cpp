@@ -50,7 +50,12 @@ enum Token
 
     //primary
     tok_identifier = -4,
-    tok_number = -5
+    tok_number = -5,
+
+    // control
+    tok_if = -6,
+    tok_then = -7,
+    tok_else = -8,
 };
 
 static std::string IdentifierStr; //Filled in if tok_identifier
@@ -75,6 +80,12 @@ static int gettok()
             return tok_def;
         if (IdentifierStr == "extern")
             return tok_extern;
+        if (IdentifierStr == "if")
+            return tok_if;
+        if (IdentifierStr == "then")
+            return tok_then;
+        if (IdentifierStr == "else")
+            return tok_else;
 
         return tok_identifier;
     }
@@ -166,6 +177,17 @@ public:
     CallExprAST(const std::string &Callee,
                 std::vector<std::unique_ptr<ExprAST>> Args)
         : Callee(Callee), Args(std::move(Args)) {}
+    Value *codegen() override;
+};
+
+class IfExprAST : public ExprAST 
+{
+    std::unique_ptr<ExprAST> Cond, Then, Else;
+
+public:
+    IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
+              std::unique_ptr<ExprAST> Else)
+        : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
     Value *codegen() override;
 };
 
@@ -283,6 +305,33 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr()
     return std::make_unique<CallExprAST>(IdName, std::move(Args));
 }
 
+static std::unique_ptr<ExprAST> ParseIfExpr()
+{
+    getNextToken(); // eat the if.
+
+    //condition.
+    auto Cond = ParseExpression();
+    if (!Cond)
+        return nullptr;
+
+    if (CurTok != tok_then)
+        return LogError("expected then");
+    getNextToken(); // eat the then
+    
+    auto Then = ParseExpression();
+    if (!Then)
+        return nullptr;
+
+    if (CurTok != tok_else)
+        return LogError("Expected else");
+
+    getNextToken();
+    auto Else = ParseExpression();
+    if (!Else)
+        return nullptr;
+    return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then), std::move(Else));
+}
+
 /// primary
 ///     ::= identifierexpr
 ///     ::= numberexpr
@@ -299,6 +348,8 @@ static std::unique_ptr<ExprAST> ParsePrimary()
             return ParseNumberExpr();
         case '(':
             return ParseParenExpr();
+        case tok_if:
+            return ParseIfExpr();
     }
 }
 
@@ -505,11 +556,13 @@ Value *BinaryExprAST::codegen()
             // Convert bool 0/1 to double 0.0 or 1.0
             return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext),
                     "booltmp");
+            /*
         case '=':
             L = Builder->CreateFCmpUEQ(L, R, "teqtmp");
             // Convert bool 0/1 to double 0.0 or 1.0
             return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext),
                     "booltmp");
+                    */
         default:
             return LogErrorV("invalid binary operator");
     }
@@ -535,6 +588,59 @@ Value *CallExprAST::codegen()
     }
 
     return Builder->CreateCall(CalleeF, ArgsV, "calltmp");
+}
+
+Value *IfExprAST::codegen() 
+{
+    Value *CondV = Cond->codegen();
+    if (!CondV)
+        return nullptr;
+
+    // Convert condition to a bool by comparing non-equal to 0.0
+    CondV = Builder->CreateFCmpONE(
+            CondV, ConstantFP::get(*TheContext, APFloat(0.0)), "ifcond");
+    
+    Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
+    // Create blocks for the then and else cases. Insert the then block at the
+    // end of the function.
+    BasicBlock *ThenBB = 
+        BasicBlock::Create(*TheContext, "then", TheFunction);
+    BasicBlock *ElseBB = BasicBlock::Create(*TheContext, "else");
+    BasicBlock *MergeBB = BasicBlock::Create(*TheContext, "ifcont");
+
+    Builder->CreateCondBr(CondV, ThenBB, ElseBB);
+
+    // Emit then value.
+    Builder->SetInsertPoint(ThenBB);
+    Value *ThenV = Then->codegen();
+    if (!ThenV)
+        return nullptr;
+
+    Builder->CreateBr(MergeBB);
+    // Codegen of the 'Then' can change the current block, update ThenBB for the PHI.
+    ThenBB = Builder->GetInsertBlock();
+
+    // Emit else block.
+    TheFunction->insert(TheFunction->end(), ElseBB);
+    Builder->SetInsertPoint(ElseBB);
+
+    Value *ElseV = Else->codegen();
+    if (!ElseV)
+        return nullptr;
+
+    Builder->CreateBr(MergeBB);
+    // Codegen of 'Else' can change the current block, update ElseBB for the PHI.
+    ElseBB = Builder->GetInsertBlock();
+
+    // Emit merge block.
+    TheFunction->insert(TheFunction->end(), MergeBB);
+    Builder->SetInsertPoint(MergeBB);
+    PHINode *PN = 
+        Builder->CreatePHI(Type::getDoubleTy(*TheContext), 2, "iftmp");
+    PN->addIncoming(ThenV, ThenBB);
+    PN->addIncoming(ElseV, ElseBB);
+    return PN;
 }
 
 Function *PrototypeAST::codegen() 
@@ -766,7 +872,7 @@ int main()
     // 1 is lowest precedence.
     BinopPrecedence['<'] = 10;
     BinopPrecedence['>'] = 10;
-    BinopPrecedence['='] = 10;
+    //BinopPrecedence['='] = 10;
     BinopPrecedence['+'] = 20;
     BinopPrecedence['-'] = 20;
     BinopPrecedence['*'] = 40; 

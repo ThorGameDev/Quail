@@ -11,6 +11,7 @@
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/TargetSelect.h"
@@ -28,7 +29,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
-#include <llvm/IR/Instructions.h>
 #include <map>
 #include <memory>
 #include <string>
@@ -42,8 +42,18 @@ using namespace llvm::orc;
 //Lexer
 
 // The lexer returns tokens [0-255] if it is an unknown character, otherwise
-// one of these for known things.
+// one of these for known things. It returns tokens greater than 255 for 
+// multi-part operators
 enum Token {
+    // Operators CURRENTLY WRONG
+    op_eq = 15677,
+    op_or = 31868,
+    op_noteq = 8509,
+    op_geq = 15933,
+    op_leq = 15421,
+    op_shl = 15420,
+    op_shr = 15934,
+
     tok_eof = -1,
 
     //commands
@@ -67,12 +77,24 @@ enum Token {
     tok_var = -11,
 };
 
+static int optok(std::string op){ return (op[1] << 8) + op[0]; }
+static std::string tokop(int op) {
+    std::string ret;
+    ret += (char)(op);
+    char second = op >> 8;
+    if (second != 0) {
+        ret += second;
+    }
+    return ret;
+}
+
 static std::string IdentifierStr; //Filled in if tok_identifier
 static double NumVal;             //Filled in if tok_number
+static std::vector<int> longops;
 
 // gettok - Return the next token from the standard input.
 static int gettok() {
-    static int LastChar = ' ';
+    static char LastChar = ' ';
 
     //Skip any white space
     while (isspace(LastChar))
@@ -128,8 +150,18 @@ static int gettok() {
         return tok_eof;
 
     // Otherwise, just return the character as its ascii value.
-    int ThisChar = LastChar;
+    char ThisChar = LastChar;
     LastChar = getchar();
+
+    // But first, check to make sure it isnt a multipart operator
+    int value = (LastChar << 8) + ThisChar;
+    for (int val = 0; val < longops.size(); val++){
+        if (longops[val] == value){
+            LastChar = getchar();
+            return value;
+        }
+    }
+
     return ThisChar;
 }
 
@@ -167,11 +199,11 @@ public:
 
 /// BinaryExprAST - Expression class for a binary operator.
 class BinaryExprAST : public ExprAST {
-    char Op;
+    int Op;
     std::unique_ptr<ExprAST> LHS, RHS;
 
 public:
-    BinaryExprAST(char Op, std::unique_ptr<ExprAST> LHS,
+    BinaryExprAST(int Op, std::unique_ptr<ExprAST> LHS,
                   std::unique_ptr<ExprAST> RHS)
         : Op(Op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
     Value *codegen() override;
@@ -179,11 +211,11 @@ public:
 
 /// UnaryExprAST - Expression class for a binary operator.
 class UnaryExprAST : public ExprAST {
-    char Opcode;
+    int Opcode;
     std::unique_ptr<ExprAST> Operand;
 
 public:
-    UnaryExprAST(char Opcode, std::unique_ptr<ExprAST> Operand)
+    UnaryExprAST(int Opcode, std::unique_ptr<ExprAST> Operand)
         : Opcode(Opcode), Operand(std::move(Operand)) {}
     Value *codegen() override;
 };
@@ -253,12 +285,13 @@ class PrototypeAST {
     std::vector<std::string> Args;
     bool IsOperator;
     unsigned Precedence; //Precedence if a binary op.
+    int OperatorName;
 
 public:
     PrototypeAST(const std::string &Name, std::vector<std::string> Args,
-                 bool IsOperator = false, unsigned Prec = 0)
+                 bool IsOperator = false, unsigned Prec = 0, int OperatorName = 0)
         : Name(Name), Args(std::move(Args)), IsOperator(IsOperator),
-          Precedence(Prec) {}
+          Precedence(Prec), OperatorName(OperatorName){}
 
     Function *codegen();
     const std::string &getName() const {
@@ -272,9 +305,9 @@ public:
         return IsOperator && Args.size() == 2;
     }
 
-    char getOperatorName() const {
+    int getOperatorName() const {
         assert(isUnaryOp() || isBinaryOp());
-        return Name[Name.size() - 1];
+        return OperatorName;
     }
 
     unsigned getBinaryPrecedence() const {
@@ -536,11 +569,11 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
 
 /// BinopPrecedence - This holds the precedence for each binary operator that is
 /// defined.
-static std::map<char, int> BinopPrecedence;
+static std::map<int, int> BinopPrecedence;
 
 /// GetTokPrecedence - Get the precedence of the pending binary operator token.
 static int GetTokPrecedence() {
-    if (!isascii(CurTok))
+    if (CurTok < 0)
         return -1;
 
     //Make sure it is a declared binop.
@@ -554,7 +587,7 @@ static int GetTokPrecedence() {
 ///     ::= '!' unary
 static std::unique_ptr<ExprAST> ParseUnary() {
     // If the current token is not an operator, it must be a primary expr.
-    if (!isascii(CurTok) || CurTok == '(' || CurTok == ',' || CurTok == '{')
+    if (CurTok < 0 || CurTok == '(' || CurTok == ',' || CurTok == '{')
         return ParsePrimary();
 
     // If this is a unary operator, read it.
@@ -619,7 +652,8 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 
     unsigned Kind = 0; // 0 = identifier, 1 = unary, 2 = binary.
     unsigned BinaryPrecedence = 30;
-
+    std::string FnSufix;
+    int OperatorName;
     switch (CurTok) {
     default:
         return LogErrorP("Expected function name in prototype");
@@ -630,21 +664,37 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
         break;
     case tok_unary:
         getNextToken();
-        if (!isascii(CurTok))
+        if (CurTok < 0)
             return LogErrorP("Expected unary operator");
         FnName = "unary";
-        FnName += (char)CurTok;
+        FnSufix = (char)CurTok;
         Kind = 1;
         getNextToken();
+        if (isascii(CurTok) && CurTok != '('){
+            FnSufix += (char)CurTok;
+            longops.push_back(optok(FnSufix));
+            getNextToken();
+        }
+        FnName += FnSufix;
+        OperatorName = optok(FnSufix);
+            
         break;
     case tok_binary:
         getNextToken();
-        if (!isascii(CurTok))
+        if (CurTok < 0)
             return LogErrorP("Expected binary operator");
         FnName = "binary";
-        FnName += (char)CurTok;
+        FnSufix = (char)CurTok;
         Kind = 2;
         getNextToken();
+        if (isascii(CurTok) && CurTok != '('){
+            FnSufix += (char)CurTok;
+            longops.push_back(optok(FnSufix));
+            getNextToken();
+        }
+        FnName += FnSufix;
+        OperatorName = optok(FnSufix);
+
 
         // Read the precedence if present.
         if (CurTok == tok_number) {
@@ -672,7 +722,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
     if (Kind && ArgNames.size() != Kind)
         return LogErrorP("Invalid number of operands for operator");
 
-    return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames), Kind != 0, BinaryPrecedence);
+    return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames), Kind != 0, BinaryPrecedence, OperatorName);
 }
 
 /// definition ::= 'def' prototype expression
@@ -790,8 +840,7 @@ Value *BinaryExprAST::codegen() {
         return nullptr;
 
     auto toBool = [](auto x) {
-        return Builder->CreateFCmpONE(x,
-                                      ConstantFP::get(*TheContext, APFloat(0.0)), "bool");
+        return Builder->CreateFCmpONE(x,ConstantFP::get(*TheContext, APFloat(0.0)), "bool");
     };
     switch (Op) {
     case '+':
@@ -804,26 +853,25 @@ Value *BinaryExprAST::codegen() {
         return Builder->CreateFDiv(L, R, "divtmp");
     case '<':
         L = Builder->CreateFCmpULT(L, R, "tlttmp");
-        return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext),
-                                     "booltmp");
+        return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext), "booltmp");
     case '>':
         L = Builder->CreateFCmpUGT(L, R, "tgttmp");
-        return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext),
-                                     "booltmp");
+        return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext), "booltmp");
     case '|':
+        L = Builder->CreateXor(toBool(L), toBool(R), "ortmp");
+        return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext), "booltmp");
+    case op_or:
         L = Builder->CreateOr(toBool(L), toBool(R), "ortmp");
-        return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext),
-                                     "booltmp");
+        return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext), "booltmp");
     case '&':
         L = Builder->CreateAnd(toBool(L), toBool(R), "andtmp");
-        return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext),
-                                     "booltmp");
+        return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext), "booltmp");
     default:
         break;
     }
     // If it wasn't a builtin binary operator, it must be a user defined one. Emit
     // a call to it.
-    Function *F = getFunction(std::string("binary") + Op);
+    Function *F = getFunction(std::string("binary") + tokop(Op));
     assert(F && "binary operator not found!");
 
     Value *Ops[2] = { L, R };
@@ -848,7 +896,7 @@ Value *UnaryExprAST::codegen() {
         break;
     }
 
-    Function *F = getFunction(std::string("unary") + Opcode);
+    Function *F = getFunction(std::string("unary") + tokop(Opcode));
     if (!F)
         return LogErrorV("Unknown unary operator");
 
@@ -1292,15 +1340,31 @@ int main() {
 
     // Install standard binary operators.
     // 1 is lowest precedence.
-    BinopPrecedence['='] = 2;
-    BinopPrecedence['|'] = 5;
-    BinopPrecedence['&'] = 5;
-    BinopPrecedence['<'] = 10;
-    BinopPrecedence['>'] = 10;
-    BinopPrecedence['+'] = 20;
-    BinopPrecedence['-'] = 20;
-    BinopPrecedence['*'] = 40;
-    BinopPrecedence['/'] = 40; // highest
+    BinopPrecedence['='] = 2; // Assignment
+    BinopPrecedence['|'] = 5; // Xor
+    BinopPrecedence[optok("||")] = 5; // Or
+    BinopPrecedence['&'] = 5; // And
+    BinopPrecedence['>'] = 10; // Greater Than
+    BinopPrecedence['<'] = 10; // Less Than
+    BinopPrecedence[optok("==")] = 10; // Equal
+    BinopPrecedence[optok("!=")] = 10; // Not Equal
+    BinopPrecedence[optok(">=")] = 10; // Greater than or equal
+    BinopPrecedence[optok("<=")] = 10; // Less than or equal
+    BinopPrecedence['+'] = 20; // Add
+    BinopPrecedence['-'] = 20; // Subtract
+    BinopPrecedence['*'] = 40; // Multiply
+    BinopPrecedence['/'] = 40; // Divide
+    BinopPrecedence['^'] = 50; // Exponent
+    BinopPrecedence[optok("<<")] = 60; // Bitwise Shift
+    BinopPrecedence[optok(">>")] = 60; // Bitwise Shift
+
+    longops.push_back(optok("||"));
+    longops.push_back(optok("=="));
+    longops.push_back(optok("!="));
+    longops.push_back(optok(">="));
+    longops.push_back(optok("<="));
+    longops.push_back(optok("<<"));
+    longops.push_back(optok(">>"));
 
     // Prime the first token.
     fprintf(stderr, "ready> ");
@@ -1313,6 +1377,5 @@ int main() {
 
     // Run the main "interpreter loop" now.
     MainLoop();
-
     return 0;
 }

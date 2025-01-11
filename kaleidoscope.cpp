@@ -48,9 +48,9 @@ enum Token {
     // Operators CURRENTLY WRONG
     op_eq = 15677,
     op_or = 31868,
-    op_noteq = 8509,
-    op_geq = 15933,
-    op_leq = 15421,
+    op_noteq = 15649,
+    op_geq = 15678,
+    op_leq = 15676,
     op_shl = 15420,
     op_shr = 15934,
 
@@ -840,7 +840,13 @@ Value *BinaryExprAST::codegen() {
         return nullptr;
 
     auto toBool = [](auto x) {
-        return Builder->CreateFCmpONE(x,ConstantFP::get(*TheContext, APFloat(0.0)), "bool");
+        return Builder->CreateFCmpONE(x,ConstantFP::get(*TheContext, APFloat(0.0)), "tobool");
+    };
+    //auto toInt = [](auto x){
+        //return Builder->CreateFPToUI(x, Type::getDoubleTy(*TheContext), "toint");
+    //};
+    auto toFloat = [](auto x) {
+        return Builder->CreateUIToFP(x, Type::getDoubleTy(*TheContext), "toint");
     };
     switch (Op) {
     case '+':
@@ -851,21 +857,39 @@ Value *BinaryExprAST::codegen() {
         return Builder->CreateFMul(L, R, "multmp");
     case '/':
         return Builder->CreateFDiv(L, R, "divtmp");
+    //case op_shl:
+        //L = Builder->CreateShl(toInt(L), toInt(R), "shiftl");
+        //return toFloat(L);
+    //case op_shr:
+        //L = Builder->CreateLShr(toInt(L), toInt(R), "shiftr");
+        //return toFloat(L);
     case '<':
         L = Builder->CreateFCmpULT(L, R, "tlttmp");
-        return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext), "booltmp");
+        return toFloat(L);
     case '>':
         L = Builder->CreateFCmpUGT(L, R, "tgttmp");
-        return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext), "booltmp");
+        return toFloat(L);
+    case op_eq:
+        L = Builder->CreateFCmpUEQ(L, R, "teqtmp");
+        return toFloat(L);
+    case op_geq:
+        L = Builder->CreateFCmpUGE(L, R, "tgetmp");
+        return toFloat(L);
+    case op_leq:
+        L = Builder->CreateFCmpULE(L, R, "tletmp");
+        return toFloat(L);
+    case op_noteq:
+        L = Builder->CreateFCmpUNE(L, R, "tnetmp");
+        return toFloat(L);
     case '|':
         L = Builder->CreateXor(toBool(L), toBool(R), "ortmp");
-        return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext), "booltmp");
+        return toFloat(L);
     case op_or:
         L = Builder->CreateOr(toBool(L), toBool(R), "ortmp");
-        return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext), "booltmp");
+        return toFloat(L);
     case '&':
         L = Builder->CreateAnd(toBool(L), toBool(R), "andtmp");
-        return Builder->CreateUIToFP(L, Type::getDoubleTy(*TheContext), "booltmp");
+        return toFloat(L);
     default:
         break;
     }
@@ -1355,16 +1379,16 @@ int main() {
     BinopPrecedence['*'] = 40; // Multiply
     BinopPrecedence['/'] = 40; // Divide
     BinopPrecedence['^'] = 50; // Exponent
-    BinopPrecedence[optok("<<")] = 60; // Bitwise Shift
-    BinopPrecedence[optok(">>")] = 60; // Bitwise Shift
+    //BinopPrecedence[optok("<<")] = 60; // Bitwise Shift
+    //BinopPrecedence[optok(">>")] = 60; // Bitwise Shift
 
     longops.push_back(optok("||"));
     longops.push_back(optok("=="));
     longops.push_back(optok("!="));
     longops.push_back(optok(">="));
     longops.push_back(optok("<="));
-    longops.push_back(optok("<<"));
-    longops.push_back(optok(">>"));
+    //longops.push_back(optok("<<"));
+    //longops.push_back(optok(">>"));
 
     // Prime the first token.
     fprintf(stderr, "ready> ");

@@ -31,6 +31,7 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <stack>
 #include <string>
 #include <utility>
 #include <vector>
@@ -42,7 +43,7 @@ using namespace llvm::orc;
 //Lexer
 
 // The lexer returns tokens [0-255] if it is an unknown character, otherwise
-// one of these for known things. It returns tokens greater than 255 for 
+// one of these for known things. It returns tokens greater than 255 for
 // multi-part operators
 enum Token {
     // Operators CURRENTLY WRONG
@@ -77,7 +78,9 @@ enum Token {
     tok_var = -11,
 };
 
-static int optok(std::string op){ return (op[1] << 8) + op[0]; }
+static int optok(std::string op) {
+    return (op[1] << 8) + op[0];
+}
 static std::string tokop(int op) {
     std::string ret;
     ret += (char)(op);
@@ -155,8 +158,8 @@ static int gettok() {
 
     // But first, check to make sure it isnt a multipart operator
     int value = (LastChar << 8) + ThisChar;
-    for (int val = 0; val < longops.size(); val++){
-        if (longops[val] == value){
+    for (int val = 0; val < longops.size(); val++) {
+        if (longops[val] == value) {
             LastChar = getchar();
             return value;
         }
@@ -236,6 +239,8 @@ class BlockAST : public ExprAST {
     std::vector<std::unique_ptr<ExprAST>> Lines;
 
 public:
+    std::vector<AllocaInst *> LocalVarAlloca;
+    std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
     BlockAST(std::vector<std::unique_ptr<ExprAST>> Lines)
         : Lines(std::move(Lines)) {}
     Value *codegen() override;
@@ -267,12 +272,10 @@ public:
 
 class VarExprAST : public ExprAST {
     std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
-    std::unique_ptr<ExprAST> Body;
 
 public:
-    VarExprAST(std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames,
-               std::unique_ptr<ExprAST> Body)
-        : VarNames(std::move(VarNames)), Body(std::move(Body)) {}
+    VarExprAST(std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames)
+        : VarNames(std::move(VarNames)) {}
 
     Value *codegen() override;
 };
@@ -291,7 +294,7 @@ public:
     PrototypeAST(const std::string &Name, std::vector<std::string> Args,
                  bool IsOperator = false, unsigned Prec = 0, int OperatorName = 0)
         : Name(Name), Args(std::move(Args)), IsOperator(IsOperator),
-          Precedence(Prec), OperatorName(OperatorName){}
+          Precedence(Prec), OperatorName(OperatorName) {}
 
     Function *codegen();
     const std::string &getName() const {
@@ -531,12 +534,7 @@ static std::unique_ptr<ExprAST> ParseVarExpr() {
 
     // Check and consume In omitted
 
-    auto Body = ParseExpression();
-    if (!Body)
-        return nullptr;
-
-    return std::make_unique<VarExprAST>(std::move(VarNames),
-                                        std::move(Body));
+    return std::make_unique<VarExprAST>(std::move(VarNames));
 }
 
 /// primary
@@ -670,14 +668,14 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
         FnSufix = (char)CurTok;
         Kind = 1;
         getNextToken();
-        if (isascii(CurTok) && CurTok != '('){
+        if (isascii(CurTok) && CurTok != '(') {
             FnSufix += (char)CurTok;
             longops.push_back(optok(FnSufix));
             getNextToken();
         }
         FnName += FnSufix;
         OperatorName = optok(FnSufix);
-            
+
         break;
     case tok_binary:
         getNextToken();
@@ -687,7 +685,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
         FnSufix = (char)CurTok;
         Kind = 2;
         getNextToken();
-        if (isascii(CurTok) && CurTok != '('){
+        if (isascii(CurTok) && CurTok != '(') {
             FnSufix += (char)CurTok;
             longops.push_back(optok(FnSufix));
             getNextToken();
@@ -731,8 +729,8 @@ static std::unique_ptr<FunctionAST> ParseDefinition() {
     auto Proto = ParsePrototype();
     if (!Proto) return nullptr;
 
-    if (auto E = ParseExpression())
-        return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+    if (auto Body = ParseExpression())
+        return std::make_unique<FunctionAST>(std::move(Proto), std::move(Body));
     return nullptr;
 }
 
@@ -768,6 +766,7 @@ static std::unique_ptr<ModuleAnalysisManager> TheMAM;
 static std::unique_ptr<PassInstrumentationCallbacks> ThePIC;
 static std::unique_ptr<StandardInstrumentations> TheSI;
 static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+static std::stack<BlockAST*> BlockStack;
 static ExitOnError ExitOnErr;
 
 static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction,
@@ -843,10 +842,10 @@ Value *BinaryExprAST::codegen() {
         return Builder->CreateFCmpONE(x,ConstantFP::get(*TheContext, APFloat(0.0)), "tobool");
     };
     //auto toInt = [](auto x){
-        //return Builder->CreateFPToUI(x, Type::getDoubleTy(*TheContext), "toint");
+    //return Builder->CreateFPToUI(x, Type::getDoubleTy(*TheContext), "toint");
     //};
     auto toFloat = [](auto x) {
-        return Builder->CreateUIToFP(x, Type::getDoubleTy(*TheContext), "toint");
+        return Builder->CreateUIToFP(x, Type::getDoubleTy(*TheContext), "tofloat");
     };
     switch (Op) {
     case '+':
@@ -858,11 +857,11 @@ Value *BinaryExprAST::codegen() {
     case '/':
         return Builder->CreateFDiv(L, R, "divtmp");
     //case op_shl:
-        //L = Builder->CreateShl(toInt(L), toInt(R), "shiftl");
-        //return toFloat(L);
+    //L = Builder->CreateShl(toInt(L), toInt(R), "shiftl");
+    //return toFloat(L);
     //case op_shr:
-        //L = Builder->CreateLShr(toInt(L), toInt(R), "shiftr");
-        //return toFloat(L);
+    //L = Builder->CreateLShr(toInt(L), toInt(R), "shiftr");
+    //return toFloat(L);
     case '<':
         L = Builder->CreateFCmpULT(L, R, "tlttmp");
         return toFloat(L);
@@ -948,6 +947,9 @@ Value *CallExprAST::codegen() {
 }
 
 Value *BlockAST::codegen() {
+    BlockStack.push(this);
+
+    // Create block and fill with lines
     Function *TheFunction = Builder->GetInsertBlock()->getParent();
     BasicBlock *CurrentBlock = BasicBlock::Create(*TheContext, "block", TheFunction);
     Builder->CreateBr(CurrentBlock);
@@ -957,9 +959,16 @@ Value *BlockAST::codegen() {
         if (!Line)
             return nullptr;
     }
+    // Exit block
     BasicBlock *AfterBB = BasicBlock::Create(*TheContext, "block", TheFunction);
     Builder->CreateBr(AfterBB);
     Builder->SetInsertPoint(AfterBB);
+
+    BlockStack.pop();
+    // Pop all local variables from scope.
+    for (unsigned i = 0, e = VarNames.size(); i != e; i++)
+        NamedValues[VarNames[i].first] = LocalVarAlloca[i];
+
     return Constant::getNullValue(Type::getDoubleTy(*TheContext));
 }
 
@@ -1134,16 +1143,15 @@ Value *VarExprAST::codegen() {
         NamedValues[VarName] = Alloca;
     }
 
-    Value *BodyVal = Body->codegen();
-    if (!BodyVal)
-        return nullptr;
+    // Feed deepest level current local variables
+    BlockStack.top()->LocalVarAlloca.insert(std::end(BlockStack.top()->LocalVarAlloca), 
+            std::begin(OldBindings), std::end(OldBindings));
+    for (int i = VarNames.size() - 1; i >= 0; i--){
+        BlockStack.top()->VarNames.push_back(std::move(VarNames[i]));
+    }
 
-    // Pop all our variables from scope.
-    for (unsigned i = 0, e = VarNames.size(); i != e; i++)
-        NamedValues[VarNames[i].first] = OldBindings[i];
-
-    // Return the body computation
-    return BodyVal;
+    // Return nothing
+    return Constant::getNullValue(Type::getDoubleTy(*TheContext));
 }
 
 Function *PrototypeAST::codegen() {
@@ -1213,6 +1221,36 @@ Function *FunctionAST::codegen() { // Has an error, details are in the tutorial
 }
 
 // Top level parsing
+
+static void InitializeBinopPrecedence(){
+    // Install standard binary operators.
+    // 1 is lowest precedence.
+    BinopPrecedence['='] = 2; // Assignment
+    BinopPrecedence['|'] = 5; // Xor
+    BinopPrecedence[optok("||")] = 5; // Or
+    BinopPrecedence['&'] = 5; // And
+    BinopPrecedence['>'] = 10; // Greater Than
+    BinopPrecedence['<'] = 10; // Less Than
+    BinopPrecedence[optok("==")] = 10; // Equal
+    BinopPrecedence[optok("!=")] = 10; // Not Equal
+    BinopPrecedence[optok(">=")] = 10; // Greater than or equal
+    BinopPrecedence[optok("<=")] = 10; // Less than or equal
+    BinopPrecedence['+'] = 20; // Add
+    BinopPrecedence['-'] = 20; // Subtract
+    BinopPrecedence['*'] = 40; // Multiply
+    BinopPrecedence['/'] = 40; // Divide
+    BinopPrecedence['^'] = 50; // Exponent
+    //BinopPrecedence[optok("<<")] = 60; // Bitwise Shift
+    //BinopPrecedence[optok(">>")] = 60; // Bitwise Shift
+
+    longops.push_back(optok("||"));
+    longops.push_back(optok("=="));
+    longops.push_back(optok("!="));
+    longops.push_back(optok(">="));
+    longops.push_back(optok("<="));
+    //longops.push_back(optok("<<"));
+    //longops.push_back(optok(">>"));
+}
 
 static void InitializeModuleAndManagers() {
     //Open a new context and module
@@ -1362,33 +1400,7 @@ int main() {
     InitializeNativeTargetAsmPrinter();
     InitializeNativeTargetAsmParser();
 
-    // Install standard binary operators.
-    // 1 is lowest precedence.
-    BinopPrecedence['='] = 2; // Assignment
-    BinopPrecedence['|'] = 5; // Xor
-    BinopPrecedence[optok("||")] = 5; // Or
-    BinopPrecedence['&'] = 5; // And
-    BinopPrecedence['>'] = 10; // Greater Than
-    BinopPrecedence['<'] = 10; // Less Than
-    BinopPrecedence[optok("==")] = 10; // Equal
-    BinopPrecedence[optok("!=")] = 10; // Not Equal
-    BinopPrecedence[optok(">=")] = 10; // Greater than or equal
-    BinopPrecedence[optok("<=")] = 10; // Less than or equal
-    BinopPrecedence['+'] = 20; // Add
-    BinopPrecedence['-'] = 20; // Subtract
-    BinopPrecedence['*'] = 40; // Multiply
-    BinopPrecedence['/'] = 40; // Divide
-    BinopPrecedence['^'] = 50; // Exponent
-    //BinopPrecedence[optok("<<")] = 60; // Bitwise Shift
-    //BinopPrecedence[optok(">>")] = 60; // Bitwise Shift
-
-    longops.push_back(optok("||"));
-    longops.push_back(optok("=="));
-    longops.push_back(optok("!="));
-    longops.push_back(optok(">="));
-    longops.push_back(optok("<="));
-    //longops.push_back(optok("<<"));
-    //longops.push_back(optok(">>"));
+    InitializeBinopPrecedence();
 
     // Prime the first token.
     fprintf(stderr, "ready> ");

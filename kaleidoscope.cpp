@@ -29,6 +29,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <llvm/IR/Constant.h>
 #include <map>
 #include <memory>
 #include <stack>
@@ -179,6 +180,19 @@ public:
 };
 
 
+class LineAST : public ExprAST {
+    std::unique_ptr<ExprAST> Body;
+    bool returns;
+
+public:
+    LineAST(std::unique_ptr<ExprAST> Body, bool returns)
+        : Body(std::move(Body)), returns(returns) {}
+    Value *codegen() override;
+    const bool &getReturns() const {
+        return returns;
+    }
+};
+
 /// NumberExprAST - Expression class for numeric literals like "1.0".
 class NumberExprAST : public ExprAST {
     double Val;
@@ -236,34 +250,38 @@ public:
 };
 
 class BlockAST : public ExprAST {
-    std::vector<std::unique_ptr<ExprAST>> Lines;
+    std::vector<std::unique_ptr<LineAST>> Lines;
 
 public:
     std::vector<AllocaInst *> LocalVarAlloca;
+    std::vector<std::pair<BasicBlock*, Value*>> ReturnFromPoints;
     std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
-    BlockAST(std::vector<std::unique_ptr<ExprAST>> Lines)
+    BlockAST(std::vector<std::unique_ptr<LineAST>> Lines)
         : Lines(std::move(Lines)) {}
     Value *codegen() override;
 };
 
-class IfExprAST : public ExprAST {
-    std::unique_ptr<ExprAST> Cond, Then, Else;
+class IfExprAST :
+    public ExprAST {
+    std::unique_ptr<ExprAST> Cond;
+    std::unique_ptr<LineAST> Then, Else;
 
 public:
-    IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
-              std::unique_ptr<ExprAST> Else)
+    IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<LineAST> Then,
+              std::unique_ptr<LineAST> Else)
         : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
     Value *codegen() override;
 };
 
 class ForExprAST : public ExprAST {
     std::string VarName;
-    std::unique_ptr<ExprAST> Start, End, Step, Body;
+    std::unique_ptr<ExprAST> Start, End, Step;
+    std::unique_ptr<LineAST> Body;
 
 public:
     ForExprAST(const std::string &VarName, std::unique_ptr<ExprAST> Start,
                std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Step,
-               std::unique_ptr<ExprAST> Body)
+               std::unique_ptr<LineAST> Body)
         : VarName(VarName), Start(std::move(Start)), End(std::move(End)),
           Step(std::move(Step)), Body(std::move(Body)) {}
 
@@ -352,6 +370,7 @@ std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
 }
 
 static std::unique_ptr<ExprAST> ParseExpression();
+static std::unique_ptr<LineAST> ParseLine();
 
 /// numberexpr ::= number
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
@@ -409,9 +428,9 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
 
 static std::unique_ptr<ExprAST> ParseBlock() {
     getNextToken(); // Eat {
-    std::vector<std::unique_ptr<ExprAST>> lines;
+    std::vector<std::unique_ptr<LineAST>> lines;
     while (CurTok != '}') {
-        auto line = ParseExpression();
+        std::unique_ptr<LineAST> line = ParseLine();
         lines.push_back(std::move(line));
     }
     getNextToken(); // Eat '}'
@@ -434,7 +453,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
         return LogError("Expected ')'");
     getNextToken(); // Eat the ')'
 
-    auto Then = ParseExpression();
+    std::unique_ptr<LineAST> Then = ParseLine();
     if (!Then)
         return nullptr;
 
@@ -442,7 +461,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
         return LogError("Expected else");
 
     getNextToken();
-    auto Else = ParseExpression();
+    std::unique_ptr<LineAST> Else = ParseLine();
     if (!Else)
         return nullptr;
     return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then), std::move(Else));
@@ -490,7 +509,7 @@ static std::unique_ptr<ExprAST> ParseForExpr() {
         return LogError("Expected ')'");
     getNextToken(); // Eat the ')'
 
-    auto Body = ParseExpression();
+    std::unique_ptr<LineAST> Body = ParseLine();
     if (!Body)
         return nullptr;
 
@@ -609,6 +628,7 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
         if (TokPrec < ExprPrec)
             return LHS;
 
+
         // Okay, we know this is a binop.
         int BinOp = CurTok;
         getNextToken(); // eat binop
@@ -635,10 +655,26 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
 
 static std::unique_ptr<ExprAST> ParseExpression() {
     auto LHS = ParseUnary();
-    if (!LHS)
+    if (!LHS) {
         return nullptr;
+    }
 
     return ParseBinOpRHS(0, std::move(LHS));
+}
+
+static std::unique_ptr<LineAST> ParseLine() {
+    bool returns = true;
+    // Prevent double semicolon possibility
+    if (CurTok == tok_def || CurTok == tok_for || CurTok == tok_if) {
+        returns = false;
+    }
+    auto body = ParseExpression();
+
+    if (CurTok == ';') {
+        getNextToken(); // Eat ;
+        returns = false;
+    }
+    return std::make_unique<LineAST>(std::move(body), returns);
 }
 
 /// prototype
@@ -729,7 +765,7 @@ static std::unique_ptr<FunctionAST> ParseDefinition() {
     auto Proto = ParsePrototype();
     if (!Proto) return nullptr;
 
-    if (auto Body = ParseExpression())
+    if (auto Body = ParseLine())
         return std::make_unique<FunctionAST>(std::move(Proto), std::move(Body));
     return nullptr;
 }
@@ -742,7 +778,7 @@ static std::unique_ptr<PrototypeAST> ParseExtern() {
 
 /// toplevelexpr ::= expression
 static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
-    if (auto E = ParseExpression()) {
+    if (auto E = ParseLine()) {
         // Make an anonymous proto.
         auto Proto = std::make_unique<PrototypeAST>("__anon_expr", std::vector<std::string>());
         return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
@@ -766,7 +802,6 @@ static std::unique_ptr<ModuleAnalysisManager> TheMAM;
 static std::unique_ptr<PassInstrumentationCallbacks> ThePIC;
 static std::unique_ptr<StandardInstrumentations> TheSI;
 static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
-static std::stack<BlockAST*> BlockStack;
 static ExitOnError ExitOnErr;
 
 static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction,
@@ -946,30 +981,73 @@ Value *CallExprAST::codegen() {
     return Builder->CreateCall(CalleeF, ArgsV, "calltmp");
 }
 
+static std::stack<BlockAST*> BlockStack;
 Value *BlockAST::codegen() {
+    std::string name = "block" + std::to_string(BlockStack.size());
+    // Add self to block stack, so that content code can access it
     BlockStack.push(this);
 
-    // Create block and fill with lines
+    // Create blocks
     Function *TheFunction = Builder->GetInsertBlock()->getParent();
-    BasicBlock *CurrentBlock = BasicBlock::Create(*TheContext, "block", TheFunction);
+    BasicBlock *CurrentBlock = BasicBlock::Create(*TheContext, name, TheFunction);
+    BasicBlock *AfterBB = BasicBlock::Create(*TheContext, name + "end");
+
+    // Allow the flow to enter current block
     Builder->CreateBr(CurrentBlock);
+
+    // Create Phi Node at end of block,
+    Builder->SetInsertPoint(AfterBB);
+    PHINode *PN = Builder->CreatePHI(Type::getDoubleTy(*TheContext), ReturnFromPoints.size(), "retval");
+
+    // Create a return value at every return point
+    // Create block and fill with lines
     Builder->SetInsertPoint(CurrentBlock);
+
+    Value *RetVal = Constant::getNullValue(Type::getDoubleTy(*TheContext));
     for (unsigned i = 0, e = Lines.size(); i != e; i++) {
         Value *Line = Lines[i]->codegen();
         if (!Line)
             return nullptr;
+        if (Lines[i]->getReturns()) {
+            std::cerr << "Retuns!\n";
+            RetVal = Line;
+            break; // Do not generate unreachable code
+        }
     }
+    CurrentBlock = Builder->GetInsertBlock();
+    // Pass return value to PHI node
+    PN->addIncoming(RetVal, CurrentBlock);
+
     // Exit block
-    BasicBlock *AfterBB = BasicBlock::Create(*TheContext, "block", TheFunction);
+    TheFunction->insert(TheFunction->end(), AfterBB);
     Builder->CreateBr(AfterBB);
     Builder->SetInsertPoint(AfterBB);
 
+    // Create a return value at every return point
+    for (int i = 0; i < ReturnFromPoints.size(); i++) {
+        Builder->SetInsertPoint(ReturnFromPoints[i].first);
+        PN->addIncoming(ReturnFromPoints[i].second, ReturnFromPoints[i].first);
+        Builder->CreateBr(AfterBB);
+    }
+    Builder->SetInsertPoint(AfterBB);
+
+    // Remove self from block stack
     BlockStack.pop();
+
     // Pop all local variables from scope.
     for (unsigned i = 0, e = VarNames.size(); i != e; i++)
         NamedValues[VarNames[i].first] = LocalVarAlloca[i];
 
-    return Constant::getNullValue(Type::getDoubleTy(*TheContext));
+    return PN;
+}
+
+Value *LineAST::codegen() {
+    Value *body = Body->codegen();
+    if (returns == true) {
+        return body;
+    } else {
+        return Constant::getNullValue(Type::getDoubleTy(*TheContext));
+    }
 }
 
 Value *IfExprAST::codegen() {
@@ -998,9 +1076,15 @@ Value *IfExprAST::codegen() {
     if (!ThenV)
         return nullptr;
 
-    Builder->CreateBr(MergeBB);
     // Codegen of the 'Then' can change the current block, update ThenBB for the PHI.
     ThenBB = Builder->GetInsertBlock();
+
+    // If "then" block does not have a semicolon, then if it is called, it should trigger a block return
+    if (Then->getReturns()) {
+        BlockStack.top()->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(ThenBB, ThenV));
+    } else {
+        Builder->CreateBr(MergeBB);
+    }
 
     // Emit else block.
     TheFunction->insert(TheFunction->end(), ElseBB);
@@ -1009,10 +1093,17 @@ Value *IfExprAST::codegen() {
     Value *ElseV = Else->codegen();
     if (!ElseV)
         return nullptr;
-
-    Builder->CreateBr(MergeBB);
+    
     // Codegen of 'Else' can change the current block, update ElseBB for the PHI.
     ElseBB = Builder->GetInsertBlock();
+
+    // If "else" block does not have a semicolon, then if it is called, it should trigger a block return
+    if (Else->getReturns()) {
+        BlockStack.top()->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(ElseBB, ElseV));
+    } else {
+        Builder->CreateBr(MergeBB);
+    }
+
 
     // Emit merge block.
     TheFunction->insert(TheFunction->end(), MergeBB);
@@ -1057,8 +1148,10 @@ Value *ForExprAST::codegen() {
     // Emit the body of the loop. This, like any other expr, can change the
     // current BB. Note that we ignore the value computed by the body, but don't
     // allow an error.
-    if (!Body->codegen())
+    Value* BodyV = Body->codegen();
+    if (!BodyV)
         return nullptr;
+
 
     // Emit the step value.
     Value *StepVal = nullptr;
@@ -1103,6 +1196,11 @@ Value *ForExprAST::codegen() {
     else
         NamedValues.erase(VarName);
 
+    // If there is a missing semicolon, return the loop body value
+    if (Body->getReturns()) {
+        BlockStack.top()->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(AfterBB, BodyV));
+    }
+
     // for expr always returns 0.0.
     return Constant::getNullValue(Type::getDoubleTy(*TheContext));
 }
@@ -1144,9 +1242,9 @@ Value *VarExprAST::codegen() {
     }
 
     // Feed deepest level current local variables
-    BlockStack.top()->LocalVarAlloca.insert(std::end(BlockStack.top()->LocalVarAlloca), 
-            std::begin(OldBindings), std::end(OldBindings));
-    for (int i = VarNames.size() - 1; i >= 0; i--){
+    BlockStack.top()->LocalVarAlloca.insert(std::end(BlockStack.top()->LocalVarAlloca),
+                                            std::begin(OldBindings), std::end(OldBindings));
+    for (int i = VarNames.size() - 1; i >= 0; i--) {
         BlockStack.top()->VarNames.push_back(std::move(VarNames[i]));
     }
 
@@ -1172,7 +1270,7 @@ Function *PrototypeAST::codegen() {
     return F;
 }
 
-Function *FunctionAST::codegen() { // Has an error, details are in the tutorial
+Function *FunctionAST::codegen() { // Might have an error, details are in the tutorial
     // Transfer ownership of the protype to the FunctionProtos map, but keep a
     // reference to it for use below.
     auto &P = *Proto;
@@ -1222,7 +1320,7 @@ Function *FunctionAST::codegen() { // Has an error, details are in the tutorial
 
 // Top level parsing
 
-static void InitializeBinopPrecedence(){
+static void InitializeBinopPrecedence() {
     // Install standard binary operators.
     // 1 is lowest precedence.
     BinopPrecedence['='] = 2; // Assignment
@@ -1359,7 +1457,7 @@ static void MainLoop() {
         switch (CurTok) {
         case tok_eof:
             return;
-        case ';': //ignore top-level semicolons
+        case '_': //ignore placeholder exec-char
             getNextToken();
             break;
         case tok_def:
@@ -1370,6 +1468,7 @@ static void MainLoop() {
             break;
         default:
             HandleTopLevelExpression();
+            std::cerr << "Finished an expression";
             break;
         }
     }

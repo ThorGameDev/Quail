@@ -275,13 +275,12 @@ public:
 
 class ForExprAST : public ExprAST {
     std::string VarName;
-    std::unique_ptr<ExprAST> Start, End, Step;
-    std::unique_ptr<LineAST> Body;
+    std::unique_ptr<ExprAST> Start, End, Step, Body;
 
 public:
     ForExprAST(const std::string &VarName, std::unique_ptr<ExprAST> Start,
                std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Step,
-               std::unique_ptr<LineAST> Body)
+               std::unique_ptr<ExprAST> Body)
         : VarName(VarName), Start(std::move(Start)), End(std::move(End)),
           Step(std::move(Step)), Body(std::move(Body)) {}
 
@@ -509,9 +508,14 @@ static std::unique_ptr<ExprAST> ParseForExpr() {
         return LogError("Expected ')'");
     getNextToken(); // Eat the ')'
 
-    std::unique_ptr<LineAST> Body = ParseLine();
+    std::unique_ptr<ExprAST> Body = ParseExpression();
     if (!Body)
         return nullptr;
+
+    if (CurTok == ';')
+        getNextToken();
+    else
+        return LogError("expected ';' at end of for loop");
 
     return std::make_unique<ForExprAST>(IdName, std::move(Start),
                                         std::move(End), std::move(Step),std::move(Body));
@@ -665,7 +669,7 @@ static std::unique_ptr<ExprAST> ParseExpression() {
 static std::unique_ptr<LineAST> ParseLine() {
     bool returns = true;
     // Prevent double semicolon possibility
-    if (CurTok == tok_def || CurTok == tok_for || CurTok == tok_if) {
+    if (CurTok == tok_def || CurTok == tok_for || CurTok == tok_if || CurTok == tok_extern) {
         returns = false;
     }
     auto body = ParseExpression();
@@ -773,7 +777,10 @@ static std::unique_ptr<FunctionAST> ParseDefinition() {
 /// external ::= 'extern' prototype
 static std::unique_ptr<PrototypeAST> ParseExtern() {
     getNextToken(); // eat extern.
-    return ParsePrototype();
+    std::unique_ptr<PrototypeAST> body = ParsePrototype();
+    if (CurTok == ';')
+        getNextToken();
+    return std::move(body);
 }
 
 /// toplevelexpr ::= expression
@@ -995,10 +1002,6 @@ Value *BlockAST::codegen() {
     // Allow the flow to enter current block
     Builder->CreateBr(CurrentBlock);
 
-    // Create Phi Node at end of block,
-    Builder->SetInsertPoint(AfterBB);
-    PHINode *PN = Builder->CreatePHI(Type::getDoubleTy(*TheContext), ReturnFromPoints.size(), "retval");
-
     // Create a return value at every return point
     // Create block and fill with lines
     Builder->SetInsertPoint(CurrentBlock);
@@ -1009,19 +1012,20 @@ Value *BlockAST::codegen() {
         if (!Line)
             return nullptr;
         if (Lines[i]->getReturns()) {
-            std::cerr << "Retuns!\n";
             RetVal = Line;
             break; // Do not generate unreachable code
         }
     }
     CurrentBlock = Builder->GetInsertBlock();
     // Pass return value to PHI node
-    PN->addIncoming(RetVal, CurrentBlock);
 
     // Exit block
     TheFunction->insert(TheFunction->end(), AfterBB);
     Builder->CreateBr(AfterBB);
     Builder->SetInsertPoint(AfterBB);
+
+    // Create the PHI node to store return values
+    PHINode *PN = Builder->CreatePHI(Type::getDoubleTy(*TheContext), ReturnFromPoints.size(), "retval");
 
     // Create a return value at every return point
     for (int i = 0; i < ReturnFromPoints.size(); i++) {
@@ -1030,6 +1034,7 @@ Value *BlockAST::codegen() {
         Builder->CreateBr(AfterBB);
     }
     Builder->SetInsertPoint(AfterBB);
+    PN->addIncoming(RetVal, CurrentBlock);
 
     // Remove self from block stack
     BlockStack.pop();
@@ -1093,7 +1098,7 @@ Value *IfExprAST::codegen() {
     Value *ElseV = Else->codegen();
     if (!ElseV)
         return nullptr;
-    
+
     // Codegen of 'Else' can change the current block, update ElseBB for the PHI.
     ElseBB = Builder->GetInsertBlock();
 
@@ -1195,11 +1200,6 @@ Value *ForExprAST::codegen() {
         NamedValues[VarName] = OldVal;
     else
         NamedValues.erase(VarName);
-
-    // If there is a missing semicolon, return the loop body value
-    if (Body->getReturns()) {
-        BlockStack.top()->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(AfterBB, BodyV));
-    }
 
     // for expr always returns 0.0.
     return Constant::getNullValue(Type::getDoubleTy(*TheContext));
@@ -1453,7 +1453,7 @@ static void HandleTopLevelExpression() {
 /// top ::= definition | external | expression | ';'
 static void MainLoop() {
     while (true) {
-        fprintf(stderr, "ready> ");
+        fprintf(stderr, "\nready> ");
         switch (CurTok) {
         case tok_eof:
             return;
@@ -1468,7 +1468,6 @@ static void MainLoop() {
             break;
         default:
             HandleTopLevelExpression();
-            std::cerr << "Finished an expression";
             break;
         }
     }

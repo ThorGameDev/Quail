@@ -30,7 +30,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <llvm/IR/Constant.h>
-#include <llvm/IR/GlobalVariable.h>
+#include <llvm/IR/Value.h>
 #include <map>
 #include <memory>
 #include <stack>
@@ -51,7 +51,7 @@ enum Token {
     // Operators CURRENTLY WRONG
     op_eq = 15677,
     op_or = 31868,
-    op_noteq = 15649,
+    op_neq = 15649,
     op_geq = 15678,
     op_leq = 15676,
     op_shl = 15420,
@@ -66,21 +66,21 @@ enum Token {
     //primary
     tok_identifier = -4,
     tok_number = -5,
+    tok_true = -6,
+    tok_false = -7,
 
     // control
-    tok_if = -6,
-    tok_else = -7,
-    tok_for = -8,
+    tok_if = -8,
+    tok_else = -9,
+    tok_for = -10,
 
     //operators
-    tok_binary = -9,
-    tok_unary = -10,
+    tok_binary = -11,
+    tok_unary = -12,
 
     // var definition
-    tok_double = -11,
-    tok_bool = -12,
-    tok_true = -13,
-    tok_false = -14,
+    tok_double = -13,
+    tok_bool = -14,
 };
 
 static int optok(std::string op) {
@@ -890,6 +890,68 @@ Value *VariableExprAST::codegen() {
     return Builder->CreateLoad(A->getAllocatedType(), A, Name.c_str());
 }
 
+namespace BinOps {
+    Value *toBool(Value* input){
+        return Builder->CreateFCmpONE(input,ConstantFP::get(*TheContext, APFloat(0.0)), "tobool");
+    }
+    Value* toFloat(Value* input) {
+        return Builder->CreateUIToFP(input, Type::getDoubleTy(*TheContext), "tofloat");
+    };
+
+    /// 0: Or
+    /// 1: Xor
+    /// 2: And
+    Value* LogicGate(DataType LHS, DataType RHS, Value* L, Value* R, int gate){
+        if (LHS != type_bool)
+            L = toBool(L);
+        Value* R_bool = R;
+        if (RHS != type_bool)
+            R_bool = toBool(R_bool);
+        
+        if (gate == 0)
+            L = Builder->CreateOr(L, R_bool, "ortmp");
+        else if (gate == 1)
+            L = Builder->CreateXor(L, R_bool, "xortmp");
+        else if (gate == 2)
+            L = Builder->CreateAnd(L, R_bool, "andtmp");
+        
+        if (LHS == type_double)
+            L = toFloat(L);
+
+        return L;
+    };
+
+    /// 0: LT
+    /// 1: GT
+    /// 2: EQ
+    /// 3: GE
+    /// 4: LE
+    /// 5: NE
+    Value* EqualityCheck(DataType LHS, DataType RHS, Value* L, Value* R, int Op){
+        if (LHS != type_double)
+            L = toFloat(L);
+        Value* R_float = R;
+        if (RHS != type_double)
+            R_float = toFloat(R);
+        
+        if (Op == '<')
+            return Builder->CreateFCmpULT(L, R_float, "tlttmp");
+        else if (Op == '>')
+            return Builder->CreateFCmpUGT(L, R_float, "tgttmp");
+        else if (Op == op_eq)
+            return Builder->CreateFCmpUEQ(L, R_float, "teqtmp");
+        else if (Op == op_geq)
+            return Builder->CreateFCmpUGE(L, R_float, "tgetmp");
+        else if (Op == op_leq)
+            return Builder->CreateFCmpULE(L, R_float, "tletmp");
+        else if (Op == op_neq)
+            return Builder->CreateFCmpUNE(L, R_float, "tnetmp");
+
+
+        return LogErrorV("Equality check did not exist");
+    }
+}
+
 Value *BinaryExprAST::codegen() {
     // Special case '=' because we don't want to emit the LHS as an expression.
     if (Op == '=') {
@@ -915,18 +977,11 @@ Value *BinaryExprAST::codegen() {
     }
     Value *L = LHS->codegen();
     Value *R = RHS->codegen();
+    DataType LT = LHS->getDataType();
+    DataType RT = RHS->getDataType();
     if(!L || !R)
         return nullptr;
 
-    auto toBool = [](auto x) {
-        return Builder->CreateFCmpONE(x,ConstantFP::get(*TheContext, APFloat(0.0)), "tobool");
-    };
-    //auto toInt = [](auto x){
-    //return Builder->CreateFPToUI(x, Type::getDoubleTy(*TheContext), "toint");
-    //};
-    auto toFloat = [](auto x) {
-        return Builder->CreateUIToFP(x, Type::getDoubleTy(*TheContext), "tofloat");
-    };
     switch (Op) {
     case '+':
         return Builder->CreateFAdd(L, R, "addtmp");
@@ -936,39 +991,19 @@ Value *BinaryExprAST::codegen() {
         return Builder->CreateFMul(L, R, "multmp");
     case '/':
         return Builder->CreateFDiv(L, R, "divtmp");
-    //case op_shl:
-    //L = Builder->CreateShl(toInt(L), toInt(R), "shiftl");
-    //return toFloat(L);
-    //case op_shr:
-    //L = Builder->CreateLShr(toInt(L), toInt(R), "shiftr");
-    //return toFloat(L);
     case '<':
-        L = Builder->CreateFCmpULT(L, R, "tlttmp");
-        return toFloat(L);
     case '>':
-        L = Builder->CreateFCmpUGT(L, R, "tgttmp");
-        return toFloat(L);
     case op_eq:
-        L = Builder->CreateFCmpUEQ(L, R, "teqtmp");
-        return toFloat(L);
     case op_geq:
-        L = Builder->CreateFCmpUGE(L, R, "tgetmp");
-        return toFloat(L);
     case op_leq:
-        L = Builder->CreateFCmpULE(L, R, "tletmp");
-        return toFloat(L);
-    case op_noteq:
-        L = Builder->CreateFCmpUNE(L, R, "tnetmp");
-        return toFloat(L);
+    case op_neq:
+        return BinOps::EqualityCheck(LT, RT, L, R, Op);
     case '|':
-        L = Builder->CreateXor(toBool(L), toBool(R), "ortmp");
-        return toFloat(L);
+        return BinOps::LogicGate(LT, RT, L, R, 1);
     case op_or:
-        L = Builder->CreateOr(toBool(L), toBool(R), "ortmp");
-        return toFloat(L);
+        return BinOps::LogicGate(LT, RT, L, R, 0);
     case '&':
-        L = Builder->CreateAnd(toBool(L), toBool(R), "andtmp");
-        return toFloat(L);
+        return BinOps::LogicGate(LT, RT, L, R, 2);
     default:
         break;
     }

@@ -30,6 +30,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <llvm/IR/Constant.h>
+#include <llvm/IR/GlobalVariable.h>
 #include <map>
 #include <memory>
 #include <stack>
@@ -76,7 +77,10 @@ enum Token {
     tok_unary = -10,
 
     // var definition
-    tok_var = -11,
+    tok_double = -11,
+    tok_bool = -12,
+    tok_true = -13,
+    tok_false = -14,
 };
 
 static int optok(std::string op) {
@@ -123,8 +127,14 @@ static int gettok() {
             return tok_binary;
         if (IdentifierStr == "unary")
             return tok_unary;
-        if (IdentifierStr == "var")
-            return tok_var;
+        if (IdentifierStr == "double")
+            return tok_double;
+        if (IdentifierStr == "bool")
+            return tok_bool;
+        if (IdentifierStr == "true")
+            return tok_true;
+        if (IdentifierStr == "false")
+            return tok_false;
 
         return tok_identifier;
     }
@@ -171,12 +181,17 @@ static int gettok() {
 
 //AST
 
+enum DataType {
+    type_double = 0,
+    type_bool = 1,
+};
 
 /// ExprAST - Base class for all expression nodes
 class ExprAST { //To add types other than doubles, this would have a type field
 public:
     virtual ~ExprAST() = default;
     virtual Value *codegen() = 0;
+    virtual DataType getDataType() { return type_double; };
 };
 
 
@@ -193,13 +208,23 @@ public:
     }
 };
 
-/// NumberExprAST - Expression class for numeric literals like "1.0".
-class NumberExprAST : public ExprAST {
+/// DoubleExprAST - Expression class for numeric literals like "1.0".
+class DoubleExprAST : public ExprAST {
     double Val;
 
 public:
-    NumberExprAST(double Val) : Val(Val) {}
+    DoubleExprAST(double Val) : Val(Val) {}
     Value *codegen() override;
+};
+
+// BoolExprAST - Expression class for bools
+class BoolExprAST : public ExprAST {
+    bool Val;
+
+public:
+    BoolExprAST(bool Val) : Val(Val) {}
+    Value *codegen() override;
+    DataType getDataType() override { return type_bool; };
 };
 
 /// VariableExprAST - Expression class for referencing a variable, like "a"
@@ -372,9 +397,15 @@ static std::unique_ptr<ExprAST> ParseExpression();
 static std::unique_ptr<LineAST> ParseLine();
 
 /// numberexpr ::= number
-static std::unique_ptr<ExprAST> ParseNumberExpr() {
-    auto Result = std::make_unique<NumberExprAST>(NumVal);
+static std::unique_ptr<ExprAST> ParseDoubleExpr() {
+    auto Result = std::make_unique<DoubleExprAST>(NumVal);
     getNextToken(); // consume the number
+    return std::move(Result);
+}
+
+static std::unique_ptr<ExprAST> ParseBoolExpr() {
+    auto Result = std::make_unique<BoolExprAST>(CurTok == tok_true);
+    getNextToken(); // Consume the truth statement
     return std::move(Result);
 }
 
@@ -574,7 +605,10 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
     case tok_identifier:
         return ParseIdentifierExpr();
     case tok_number:
-        return ParseNumberExpr();
+        return ParseDoubleExpr();
+    case tok_true:
+    case tok_false:
+        return ParseBoolExpr();
     case '{':
         return ParseBlock();
     case '(':
@@ -583,7 +617,7 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
         return ParseIfExpr();
     case tok_for:
         return ParseForExpr();
-    case tok_var:
+    case tok_double:
         return ParseVarExpr();
     }
 }
@@ -839,8 +873,12 @@ Function *getFunction(std::string Name) {
     return nullptr;
 }
 
-Value *NumberExprAST::codegen() {
+Value *DoubleExprAST::codegen() {
     return ConstantFP::get(*TheContext, APFloat(Val));
+}
+
+Value *BoolExprAST::codegen() {
+    return ConstantInt::get(*TheContext, APInt(1, Val));
 }
 
 Value *VariableExprAST::codegen() {
@@ -1206,6 +1244,10 @@ Value *ForExprAST::codegen() {
 }
 
 Value *VarExprAST::codegen() {
+    if (BlockStack.size() == 0){
+        return LogErrorV("Variable must be contained in a block");
+    }
+
     std::vector<AllocaInst *> OldBindings;
 
     Function *TheFunction = Builder->GetInsertBlock()->getParent();
@@ -1437,8 +1479,11 @@ static void HandleTopLevelExpression() {
 
             // Get the symbol's address and cast it into the right type (takes no
             // arguments, returns a double) so we can call it as a native function.
+
             double (*FP)() = ExprSymbol.getAddress().toPtr<double (*)()>();
+            bool (*TF)() = ExprSymbol.getAddress().toPtr<bool (*)()>();
             fprintf(stderr, "Evaluated to %f\n", FP());
+            fprintf(stderr, "Evaluated to %d\n", TF());
 
             // Delete the anonymous expression module from the JIT
             ExitOnErr(RT->remove());

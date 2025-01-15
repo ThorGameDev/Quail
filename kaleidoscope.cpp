@@ -189,10 +189,13 @@ enum DataType {
 
 /// ExprAST - Base class for all expression nodes
 class ExprAST { //To add types other than doubles, this would have a type field
-public:
     DataType dtype;
+public:
     virtual ~ExprAST() = default;
     virtual Value *codegen() = 0;
+    const DataType &getDatatype() const {
+        return dtype;
+    };
 protected:
     ExprAST(DataType dtype): dtype(dtype) {};
 };
@@ -204,7 +207,7 @@ class LineAST : public ExprAST {
 
 public:
     LineAST(std::unique_ptr<ExprAST> Body, bool returns)
-        : Body(std::move(Body)), returns(returns), ExprAST(Body->dtype) {}
+        : Body(std::move(Body)), returns(returns), ExprAST(Body->getDatatype()) {}
     Value *codegen() override;
     const bool &getReturns() const {
         return returns;
@@ -216,7 +219,7 @@ class DoubleExprAST : public ExprAST {
     double Val;
 
 public:
-    DoubleExprAST(double Val) : Val(Val), ExprAST(type_double){}
+    DoubleExprAST(double Val) : Val(Val), ExprAST(type_double) {}
     Value *codegen() override;
 };
 
@@ -261,7 +264,7 @@ class UnaryExprAST : public ExprAST {
 
 public:
     UnaryExprAST(int Opcode, std::unique_ptr<ExprAST> Operand)
-        : Opcode(Opcode), Operand(std::move(Operand)), ExprAST(Operand->dtype) {}
+        : Opcode(Opcode), Operand(std::move(Operand)), ExprAST(Operand->getDatatype() ) {}
     Value *codegen() override;
 };
 
@@ -478,10 +481,10 @@ static std::unique_ptr<ExprAST> ParseBlock() {
     blockDtype = type_ERROR;
     while (CurTok != '}') {
         std::unique_ptr<LineAST> line = ParseLine();
-        if(line->getReturns()){
+        if(line->getReturns()) {
             if (blockDtype == type_ERROR)
-                blockDtype = line->dtype; 
-            if (blockDtype != line->dtype)
+                blockDtype = line->getDatatype();
+            if (blockDtype != line->getDatatype())
                 return LogError("Block can not have multiple return types");
         }
         lines.push_back(std::move(line));
@@ -513,10 +516,10 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
     if (!Then)
         return nullptr;
 
-    if(Then->getReturns() && inBlock){
+    if(Then->getReturns() && inBlock) {
         if (blockDtype == type_ERROR)
-            blockDtype = Then->dtype; 
-        else if (blockDtype != Then->dtype)
+            blockDtype = Then->getDatatype();
+        else if (blockDtype != Then->getDatatype())
             return LogError("Block can not have multiple return types");
     }
 
@@ -528,10 +531,10 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
     if (!Else)
         return nullptr;
 
-    if(Else->getReturns() && inBlock){
+    if(Else->getReturns() && inBlock) {
         if (blockDtype == type_ERROR)
-            blockDtype = Else->dtype; 
-        else if (blockDtype != Else->dtype)
+            blockDtype = Else->getDatatype();
+        else if (blockDtype != Else->getDatatype())
             return LogError("Block can not have multiple return types");
     }
 
@@ -726,13 +729,13 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                 return nullptr;
         }
         //Merge LHS/RHS.
-        
-        if(LHS->dtype != RHS->dtype){
+
+        if(LHS->getDatatype() != RHS->getDatatype()) {
             return LogError("Both sides of the operation must be the same type.");
         }
 
         LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS),
-                                              std::move(RHS), LHS->dtype);
+                                              std::move(RHS), LHS->getDatatype());
     }
 }
 
@@ -937,65 +940,59 @@ Value *VariableExprAST::codegen() {
 }
 
 namespace BinOps {
-    Value *toBool(Value* input){
-        return Builder->CreateFCmpONE(input,ConstantFP::get(*TheContext, APFloat(0.0)), "tobool");
-    }
-    Value* toFloat(Value* input) {
-        return Builder->CreateUIToFP(input, Type::getDoubleTy(*TheContext), "tofloat");
-    };
+Value *toBool(Value* input) {
+    return Builder->CreateFCmpONE(input,ConstantFP::get(*TheContext, APFloat(0.0)), "tobool");
+}
+Value* toFloat(Value* input) {
+    return Builder->CreateUIToFP(input, Type::getDoubleTy(*TheContext), "tofloat");
+};
 
-    /// 0: Or
-    /// 1: Xor
-    /// 2: And
-    Value* LogicGate(DataType LHS, DataType RHS, Value* L, Value* R, int gate){
-        if (LHS != type_bool)
-            L = toBool(L);
-        Value* R_bool = R;
-        if (RHS != type_bool)
-            R_bool = toBool(R_bool);
-        
-        if (gate == 0)
-            L = Builder->CreateOr(L, R_bool, "ortmp");
-        else if (gate == 1)
-            L = Builder->CreateXor(L, R_bool, "xortmp");
-        else if (gate == 2)
-            L = Builder->CreateAnd(L, R_bool, "andtmp");
-        
-        if (LHS == type_double)
-            L = toFloat(L);
+/// 0: Or
+/// 1: Xor
+/// 2: And
+Value* LogicGate(DataType LHS, DataType RHS, Value* L, Value* R, int gate) {
+    if (LHS != type_bool)
+        L = toBool(L);
+    Value* R_bool = R;
+    if (RHS != type_bool)
+        R_bool = toBool(R_bool);
 
-        return L;
-    };
+    if (gate == 0)
+        L = Builder->CreateOr(L, R_bool, "ortmp");
+    else if (gate == 1)
+        L = Builder->CreateXor(L, R_bool, "xortmp");
+    else if (gate == 2)
+        L = Builder->CreateAnd(L, R_bool, "andtmp");
 
-    /// 0: LT
-    /// 1: GT
-    /// 2: EQ
-    /// 3: GE
-    /// 4: LE
-    /// 5: NE
-    Value* EqualityCheck(DataType LHS, DataType RHS, Value* L, Value* R, int Op){
-        if (LHS != type_double)
-            L = toFloat(L);
-        Value* R_float = R;
-        if (RHS != type_double)
-            R_float = toFloat(R);
-        
-        if (Op == '<')
-            return Builder->CreateFCmpULT(L, R_float, "tlttmp");
-        else if (Op == '>')
-            return Builder->CreateFCmpUGT(L, R_float, "tgttmp");
-        else if (Op == op_eq)
-            return Builder->CreateFCmpUEQ(L, R_float, "teqtmp");
-        else if (Op == op_geq)
-            return Builder->CreateFCmpUGE(L, R_float, "tgetmp");
-        else if (Op == op_leq)
-            return Builder->CreateFCmpULE(L, R_float, "tletmp");
-        else if (Op == op_neq)
-            return Builder->CreateFCmpUNE(L, R_float, "tnetmp");
+    if (LHS == type_double)
+        L = toFloat(L);
+
+    return L;
+};
+
+Value* EqualityCheck(DataType LHS, DataType RHS, Value* L, Value* R, int Op) {
+    if (LHS != type_double)
+        L = toFloat(L);
+    Value* R_float = R;
+    if (RHS != type_double)
+        R_float = toFloat(R);
+
+    if (Op == '<')
+        return Builder->CreateFCmpULT(L, R_float, "tlttmp");
+    else if (Op == '>')
+        return Builder->CreateFCmpUGT(L, R_float, "tgttmp");
+    else if (Op == op_eq)
+        return Builder->CreateFCmpUEQ(L, R_float, "teqtmp");
+    else if (Op == op_geq)
+        return Builder->CreateFCmpUGE(L, R_float, "tgetmp");
+    else if (Op == op_leq)
+        return Builder->CreateFCmpULE(L, R_float, "tletmp");
+    else if (Op == op_neq)
+        return Builder->CreateFCmpUNE(L, R_float, "tnetmp");
 
 
-        return LogErrorV("Equality check did not exist");
-    }
+    return LogErrorV("Equality check did not exist");
+}
 }
 
 Value *BinaryExprAST::codegen() {
@@ -1023,8 +1020,8 @@ Value *BinaryExprAST::codegen() {
     }
     Value *L = LHS->codegen();
     Value *R = RHS->codegen();
-    DataType LT = LHS->dtype;
-    DataType RT = RHS->dtype;
+    DataType LT = LHS->getDatatype();
+    DataType RT = RHS->getDatatype();
     if(!L || !R)
         return nullptr;
 
@@ -1147,7 +1144,7 @@ Value *BlockAST::codegen() {
 
     // Get the return type
     Type* retType = RetVal->getType();
-    if (!hasImmediateReturn && ReturnFromPoints.size() > 0){
+    if (!hasImmediateReturn && ReturnFromPoints.size() > 0) {
         retType = ReturnFromPoints[0].second->getType();
     }
 
@@ -1185,7 +1182,7 @@ Value *LineAST::codegen() {
 
 // USES TEMPORARY DTYPE
 Value *IfExprAST::codegen() {
-    if (Cond->dtype != type_bool){
+    if (Cond->getDatatype() != type_bool) {
         return LogErrorV("If condition should be a boolean value!");
     }
     Type* retType = Type::getDoubleTy(*TheContext);
@@ -1252,7 +1249,7 @@ Value *IfExprAST::codegen() {
 }
 
 Value *ForExprAST::codegen() {
-    if (End->dtype != type_bool){
+    if (End->getDatatype() != type_bool) {
         return LogErrorV("For loop condition should be bool type");
     }
 
@@ -1337,7 +1334,7 @@ Value *ForExprAST::codegen() {
 }
 
 Value *VarExprAST::codegen() {
-    if (BlockStack.size() == 0){
+    if (BlockStack.size() == 0) {
         return LogErrorV("Variable must be contained in a block");
     }
 

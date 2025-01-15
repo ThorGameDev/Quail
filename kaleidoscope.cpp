@@ -182,6 +182,7 @@ static int gettok() {
 //AST
 
 enum DataType {
+    type_ERROR = 999,
     type_double = 0,
     type_bool = 1,
 };
@@ -189,9 +190,11 @@ enum DataType {
 /// ExprAST - Base class for all expression nodes
 class ExprAST { //To add types other than doubles, this would have a type field
 public:
+    DataType dtype;
     virtual ~ExprAST() = default;
     virtual Value *codegen() = 0;
-    virtual DataType getDataType() { return type_double; };
+protected:
+    ExprAST(DataType dtype): dtype(dtype) {};
 };
 
 
@@ -201,7 +204,7 @@ class LineAST : public ExprAST {
 
 public:
     LineAST(std::unique_ptr<ExprAST> Body, bool returns)
-        : Body(std::move(Body)), returns(returns) {}
+        : Body(std::move(Body)), returns(returns), ExprAST(Body->dtype) {}
     Value *codegen() override;
     const bool &getReturns() const {
         return returns;
@@ -213,7 +216,7 @@ class DoubleExprAST : public ExprAST {
     double Val;
 
 public:
-    DoubleExprAST(double Val) : Val(Val) {}
+    DoubleExprAST(double Val) : Val(Val), ExprAST(type_double){}
     Value *codegen() override;
 };
 
@@ -222,17 +225,17 @@ class BoolExprAST : public ExprAST {
     bool Val;
 
 public:
-    BoolExprAST(bool Val) : Val(Val) {}
+    BoolExprAST(bool Val) : Val(Val), ExprAST(type_bool) {}
     Value *codegen() override;
-    DataType getDataType() override { return type_bool; };
 };
 
 /// VariableExprAST - Expression class for referencing a variable, like "a"
+/// USES TEMPORARY DATATYPE
 class VariableExprAST : public ExprAST {
     std::string Name;
 
 public:
-    VariableExprAST(const std::string &Name) : Name(Name) {}
+    VariableExprAST(const std::string &Name) : Name(Name), ExprAST(type_double) {}
     Value *codegen() override;
     const std::string &getName() const {
         return Name;
@@ -246,8 +249,8 @@ class BinaryExprAST : public ExprAST {
 
 public:
     BinaryExprAST(int Op, std::unique_ptr<ExprAST> LHS,
-                  std::unique_ptr<ExprAST> RHS)
-        : Op(Op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
+                  std::unique_ptr<ExprAST> RHS, DataType dtype)
+        : Op(Op), LHS(std::move(LHS)), RHS(std::move(RHS)), ExprAST(dtype) {}
     Value *codegen() override;
 };
 
@@ -258,11 +261,12 @@ class UnaryExprAST : public ExprAST {
 
 public:
     UnaryExprAST(int Opcode, std::unique_ptr<ExprAST> Operand)
-        : Opcode(Opcode), Operand(std::move(Operand)) {}
+        : Opcode(Opcode), Operand(std::move(Operand)), ExprAST(Operand->dtype) {}
     Value *codegen() override;
 };
 
 /// CallExprAST - Expression class for function calls.
+// USES TEMPORARY DTYPE
 class CallExprAST : public ExprAST {
     std::string Callee;
     std::vector<std::unique_ptr<ExprAST>> Args;
@@ -270,7 +274,7 @@ class CallExprAST : public ExprAST {
 public:
     CallExprAST(const std::string &Callee,
                 std::vector<std::unique_ptr<ExprAST>> Args)
-        : Callee(Callee), Args(std::move(Args)) {}
+        : Callee(Callee), Args(std::move(Args)), ExprAST(type_double) {}
     Value *codegen() override;
 };
 
@@ -281,11 +285,12 @@ public:
     std::vector<AllocaInst *> LocalVarAlloca;
     std::vector<std::pair<BasicBlock*, Value*>> ReturnFromPoints;
     std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
-    BlockAST(std::vector<std::unique_ptr<LineAST>> Lines)
-        : Lines(std::move(Lines)) {}
+    BlockAST(std::vector<std::unique_ptr<LineAST>> Lines, DataType dtype)
+        : Lines(std::move(Lines)), ExprAST(dtype) {}
     Value *codegen() override;
 };
 
+// USES TEMPORARY DTYPE
 class IfExprAST :
     public ExprAST {
     std::unique_ptr<ExprAST> Cond;
@@ -294,10 +299,12 @@ class IfExprAST :
 public:
     IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<LineAST> Then,
               std::unique_ptr<LineAST> Else)
-        : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
+        : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)),
+          ExprAST(type_double) {}
     Value *codegen() override;
 };
 
+// USES TEMPORARY DTYPE
 class ForExprAST : public ExprAST {
     std::string VarName;
     std::unique_ptr<ExprAST> Start, End, Step, Body;
@@ -307,17 +314,18 @@ public:
                std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Step,
                std::unique_ptr<ExprAST> Body)
         : VarName(VarName), Start(std::move(Start)), End(std::move(End)),
-          Step(std::move(Step)), Body(std::move(Body)) {}
+          Step(std::move(Step)), Body(std::move(Body)), ExprAST(type_double) {}
 
     Value *codegen() override;
 };
 
+// USES TEMPORARY DTYPE
 class VarExprAST : public ExprAST {
     std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
 
 public:
     VarExprAST(std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames)
-        : VarNames(std::move(VarNames)) {}
+        : VarNames(std::move(VarNames)), ExprAST(type_double) {}
 
     Value *codegen() override;
 };
@@ -456,15 +464,33 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
     return std::make_unique<CallExprAST>(IdName, std::move(Args));
 }
 
+// USES PLACEHOLDER DTYPE
+// these two global values are used exclusively inside of parse block, and parse if.
+// Their purpose is so that any if statement contained within a block can effect the
+// overall block's return type, or throw an error if the return type is different from
+// expected.
+static bool inBlock;
+static DataType blockDtype;
 static std::unique_ptr<ExprAST> ParseBlock() {
     getNextToken(); // Eat {
     std::vector<std::unique_ptr<LineAST>> lines;
+    inBlock = true;
+    blockDtype = type_ERROR;
     while (CurTok != '}') {
         std::unique_ptr<LineAST> line = ParseLine();
+        if(line->getReturns()){
+            if (blockDtype == type_ERROR)
+                blockDtype = line->dtype; 
+            if (blockDtype != line->dtype)
+                return LogError("Block can not have multiple return types");
+        }
         lines.push_back(std::move(line));
     }
+    inBlock = false;
     getNextToken(); // Eat '}'
-    return std::make_unique<BlockAST>(std::move(lines));
+    if (blockDtype == type_ERROR)
+        blockDtype = type_double;
+    return std::make_unique<BlockAST>(std::move(lines), blockDtype);
 }
 
 static std::unique_ptr<ExprAST> ParseIfExpr() {
@@ -487,6 +513,13 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
     if (!Then)
         return nullptr;
 
+    if(Then->getReturns() && inBlock){
+        if (blockDtype == type_ERROR)
+            blockDtype = Then->dtype; 
+        else if (blockDtype != Then->dtype)
+            return LogError("Block can not have multiple return types");
+    }
+
     if (CurTok != tok_else)
         return LogError("Expected else");
 
@@ -494,6 +527,14 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
     std::unique_ptr<LineAST> Else = ParseLine();
     if (!Else)
         return nullptr;
+
+    if(Else->getReturns() && inBlock){
+        if (blockDtype == type_ERROR)
+            blockDtype = Else->dtype; 
+        else if (blockDtype != Else->dtype)
+            return LogError("Block can not have multiple return types");
+    }
+
     return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then), std::move(Else));
 }
 
@@ -685,8 +726,13 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                 return nullptr;
         }
         //Merge LHS/RHS.
+        
+        if(LHS->dtype != RHS->dtype){
+            return LogError("Both sides of the operation must be the same type.");
+        }
+
         LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS),
-                                              std::move(RHS));
+                                              std::move(RHS), LHS->dtype);
     }
 }
 
@@ -977,8 +1023,8 @@ Value *BinaryExprAST::codegen() {
     }
     Value *L = LHS->codegen();
     Value *R = RHS->codegen();
-    DataType LT = LHS->getDataType();
-    DataType RT = RHS->getDataType();
+    DataType LT = LHS->dtype;
+    DataType RT = RHS->dtype;
     if(!L || !R)
         return nullptr;
 
@@ -1080,12 +1126,14 @@ Value *BlockAST::codegen() {
     Builder->SetInsertPoint(CurrentBlock);
 
     Value *RetVal = Constant::getNullValue(Type::getDoubleTy(*TheContext));
+    bool hasImmediateReturn = false;
     for (unsigned i = 0, e = Lines.size(); i != e; i++) {
         Value *Line = Lines[i]->codegen();
         if (!Line)
             return nullptr;
         if (Lines[i]->getReturns()) {
             RetVal = Line;
+            hasImmediateReturn = true;
             break; // Do not generate unreachable code
         }
     }
@@ -1097,8 +1145,14 @@ Value *BlockAST::codegen() {
     Builder->CreateBr(AfterBB);
     Builder->SetInsertPoint(AfterBB);
 
+    // Get the return type
+    Type* retType = RetVal->getType();
+    if (!hasImmediateReturn && ReturnFromPoints.size() > 0){
+        retType = ReturnFromPoints[0].second->getType();
+    }
+
     // Create the PHI node to store return values
-    PHINode *PN = Builder->CreatePHI(Type::getDoubleTy(*TheContext), ReturnFromPoints.size(), "retval");
+    PHINode *PN = Builder->CreatePHI(retType, ReturnFromPoints.size(), "retval");
 
     // Create a return value at every return point
     for (int i = 0; i < ReturnFromPoints.size(); i++) {
@@ -1107,7 +1161,8 @@ Value *BlockAST::codegen() {
         Builder->CreateBr(AfterBB);
     }
     Builder->SetInsertPoint(AfterBB);
-    PN->addIncoming(RetVal, CurrentBlock);
+    if (hasImmediateReturn)
+        PN->addIncoming(RetVal, CurrentBlock);
 
     // Remove self from block stack
     BlockStack.pop();
@@ -1128,14 +1183,16 @@ Value *LineAST::codegen() {
     }
 }
 
+// USES TEMPORARY DTYPE
 Value *IfExprAST::codegen() {
+    if (Cond->dtype != type_bool){
+        return LogErrorV("If condition should be a boolean value!");
+    }
+    Type* retType = Type::getDoubleTy(*TheContext);
+
     Value *CondV = Cond->codegen();
     if (!CondV)
         return nullptr;
-
-    // Convert condition to a bool by comparing non-equal to 0.0
-    CondV = Builder->CreateFCmpONE(
-                CondV, ConstantFP::get(*TheContext, APFloat(0.0)), "ifcond");
 
     Function *TheFunction = Builder->GetInsertBlock()->getParent();
 
@@ -1158,8 +1215,9 @@ Value *IfExprAST::codegen() {
     ThenBB = Builder->GetInsertBlock();
 
     // If "then" block does not have a semicolon, then if it is called, it should trigger a block return
-    if (Then->getReturns()) {
+    if (Then->getReturns() && BlockStack.size() > 0) {
         BlockStack.top()->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(ThenBB, ThenV));
+        retType = ThenV->getType();
     } else {
         Builder->CreateBr(MergeBB);
     }
@@ -1176,8 +1234,9 @@ Value *IfExprAST::codegen() {
     ElseBB = Builder->GetInsertBlock();
 
     // If "else" block does not have a semicolon, then if it is called, it should trigger a block return
-    if (Else->getReturns()) {
+    if (Else->getReturns() && BlockStack.size() > 0) {
         BlockStack.top()->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(ElseBB, ElseV));
+        retType = ElseV->getType();
     } else {
         Builder->CreateBr(MergeBB);
     }
@@ -1186,14 +1245,17 @@ Value *IfExprAST::codegen() {
     // Emit merge block.
     TheFunction->insert(TheFunction->end(), MergeBB);
     Builder->SetInsertPoint(MergeBB);
-    PHINode *PN =
-        Builder->CreatePHI(Type::getDoubleTy(*TheContext), 2, "iftmp");
+    PHINode *PN = Builder->CreatePHI(retType, 2, "iftmp");
     PN->addIncoming(ThenV, ThenBB);
     PN->addIncoming(ElseV, ElseBB);
     return PN;
 }
 
 Value *ForExprAST::codegen() {
+    if (End->dtype != type_bool){
+        return LogErrorV("For loop condition should be bool type");
+    }
+
     Function *TheFunction = Builder->GetInsertBlock()->getParent();
 
     //Create an alloca for the variable in the entry block.
@@ -1253,10 +1315,6 @@ Value *ForExprAST::codegen() {
         Builder->CreateLoad(Alloca->getAllocatedType(), Alloca, VarName.c_str());
     Value *NextVar = Builder->CreateFAdd(CurVar, StepVal, "nextvar");
     Builder->CreateStore(NextVar, Alloca);
-
-    // Convert condition to a bool by comparing non-equal to 0.0.
-    EndCond = Builder->CreateFCmpONE(
-                  EndCond, ConstantFP::get(*TheContext, APFloat(0.0)), "loopcond");
 
     // Create the "after loop" block and insert it.
     BasicBlock *AfterBB =

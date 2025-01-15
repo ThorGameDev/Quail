@@ -1151,27 +1151,6 @@ Value *BlockAST::codegen() {
     Builder->CreateBr(AfterBB);
     Builder->SetInsertPoint(AfterBB);
 
-    // Get the return type
-    Type* retType = RetVal->getType();
-    if (!hasImmediateReturn && ReturnFromPoints.size() > 0) {
-        retType = ReturnFromPoints[0].second->getType();
-    }
-
-    // Create the PHI node to store return values
-    PHINode *PN = Builder->CreatePHI(retType, ReturnFromPoints.size() + 1, "retval");
-
-    // Create a return value at every return point
-    for (int i = 0; i < ReturnFromPoints.size(); i++) {
-        Builder->SetInsertPoint(ReturnFromPoints[i].first);
-        PN->addIncoming(ReturnFromPoints[i].second, ReturnFromPoints[i].first);
-        Builder->CreateBr(AfterBB);
-    }
-    Builder->SetInsertPoint(AfterBB);
-    if (!hasImmediateReturn)
-        RetVal = Constant::getNullValue(ReturnFromPoints[0].second->getType());
-    PN->addIncoming(RetVal, CurrentBlock);
-
-
     // Remove self from block stack
     BlockStack.pop();
 
@@ -1179,7 +1158,30 @@ Value *BlockAST::codegen() {
     for (unsigned i = 0, e = VarNames.size(); i != e; i++)
         NamedValues[VarNames[i].first] = LocalVarAlloca[i];
 
-    return PN;
+    if (hasImmediateReturn || ReturnFromPoints.size() > 0){
+
+        // Get the return type
+        Type* retType = RetVal->getType();
+        if (!hasImmediateReturn) {
+            retType = ReturnFromPoints[0].second->getType();
+            RetVal = Constant::getNullValue(ReturnFromPoints[0].second->getType());
+        }
+
+        // Create the PHI node to store return values
+        PHINode *PN = Builder->CreatePHI(retType, ReturnFromPoints.size() + 1, "retval");
+
+        // Create a return value at every return point
+        for (int i = 0; i < ReturnFromPoints.size(); i++) {
+            Builder->SetInsertPoint(ReturnFromPoints[i].first);
+            PN->addIncoming(ReturnFromPoints[i].second, ReturnFromPoints[i].first);
+            Builder->CreateBr(AfterBB);
+        }
+        Builder->SetInsertPoint(AfterBB);
+        PN->addIncoming(RetVal, CurrentBlock);
+
+        return PN;
+    }
+    return Constant::getNullValue( Type::getDoubleTy(*TheContext));
 }
 
 Value *LineAST::codegen() {
@@ -1464,7 +1466,7 @@ static void InitializeBinopPrecedence() {
     BinopProperties[optok("||")] = {5, false,true, type_bool}; // Or
     BinopProperties['&'] = {5, false, true, type_bool}; // And
     BinopProperties['>'] = {10, true, false, type_bool}; // Greater Than
-    BinopProperties['<'] = {10, false, false, type_bool}; // Less Than
+    BinopProperties['<'] = {10, true, false, type_bool}; // Less Than
     BinopProperties[optok("==")] = {10, true, true, type_bool}; // Equal
     BinopProperties[optok("!=")] = {10, true, true, type_bool}; // Not Equal
     BinopProperties[optok(">=")] = {10, true, false, type_bool}; // Greater than or equal

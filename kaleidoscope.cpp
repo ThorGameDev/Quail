@@ -182,7 +182,7 @@ static int gettok() {
 //AST
 
 enum DataType {
-    type_ERROR = 999,
+    type_UNDECIDED = 999,
     type_double = 0,
     type_bool = 1,
 };
@@ -478,11 +478,11 @@ static std::unique_ptr<ExprAST> ParseBlock() {
     getNextToken(); // Eat {
     std::vector<std::unique_ptr<LineAST>> lines;
     inBlock = true;
-    blockDtype = type_ERROR;
+    blockDtype = type_UNDECIDED;
     while (CurTok != '}') {
         std::unique_ptr<LineAST> line = ParseLine();
         if(line->getReturns()) {
-            if (blockDtype == type_ERROR)
+            if (blockDtype == type_UNDECIDED)
                 blockDtype = line->getDatatype();
             if (blockDtype != line->getDatatype())
                 return LogError("Block can not have multiple return types");
@@ -491,7 +491,7 @@ static std::unique_ptr<ExprAST> ParseBlock() {
     }
     inBlock = false;
     getNextToken(); // Eat '}'
-    if (blockDtype == type_ERROR)
+    if (blockDtype == type_UNDECIDED)
         blockDtype = type_double;
     return std::make_unique<BlockAST>(std::move(lines), blockDtype);
 }
@@ -517,7 +517,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
         return nullptr;
 
     if(Then->getReturns() && inBlock) {
-        if (blockDtype == type_ERROR)
+        if (blockDtype == type_UNDECIDED)
             blockDtype = Then->getDatatype();
         else if (blockDtype != Then->getDatatype())
             return LogError("Block can not have multiple return types");
@@ -532,7 +532,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
         return nullptr;
 
     if(Else->getReturns() && inBlock) {
-        if (blockDtype == type_ERROR)
+        if (blockDtype == type_UNDECIDED)
             blockDtype = Else->getDatatype();
         else if (blockDtype != Else->getDatatype())
             return LogError("Block can not have multiple return types");
@@ -666,9 +666,15 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
     }
 }
 
-/// BinopPrecedence - This holds the precedence for each binary operator that is
+/// BinopProperties - This holds the precedence for each binary operator that is
 /// defined.
-static std::map<int, int> BinopPrecedence;
+struct BinopProperty{
+    int Precedence;
+    bool AllowDouble;
+    bool AllowBool;
+    DataType returnType;
+};
+static std::map<int, BinopProperty> BinopProperties;
 
 /// GetTokPrecedence - Get the precedence of the pending binary operator token.
 static int GetTokPrecedence() {
@@ -676,9 +682,8 @@ static int GetTokPrecedence() {
         return -1;
 
     //Make sure it is a declared binop.
-    int TokPrec = BinopPrecedence[CurTok];
-    if (TokPrec <= 0) return -1;
-    return TokPrec;
+    if (BinopProperties.find(CurTok) == BinopProperties.end()) return -1;
+    return BinopProperties[CurTok].Precedence;
 }
 
 /// unary
@@ -733,9 +738,16 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
         if(LHS->getDatatype() != RHS->getDatatype()) {
             return LogError("Both sides of the operation must be the same type.");
         }
+        if (!BinopProperties[BinOp].AllowBool && LHS->getDatatype() == type_bool){
+            return LogError("Binop does not allow boolean input.");
+        }
+        if (!BinopProperties[BinOp].AllowDouble && LHS->getDatatype() == type_double){
+            return LogError("Binop does not allow double input.");
+        }
+        DataType returnType = BinopProperties[BinOp].returnType;
 
         LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS),
-                                              std::move(RHS), LHS->getDatatype());
+                                              std::move(RHS), returnType);
     }
 }
 
@@ -964,9 +976,6 @@ Value* LogicGate(DataType LHS, DataType RHS, Value* L, Value* R, int gate) {
     else if (gate == 2)
         L = Builder->CreateAnd(L, R_bool, "andtmp");
 
-    if (LHS == type_double)
-        L = toFloat(L);
-
     return L;
 };
 
@@ -1149,7 +1158,7 @@ Value *BlockAST::codegen() {
     }
 
     // Create the PHI node to store return values
-    PHINode *PN = Builder->CreatePHI(retType, ReturnFromPoints.size(), "retval");
+    PHINode *PN = Builder->CreatePHI(retType, ReturnFromPoints.size() + 1, "retval");
 
     // Create a return value at every return point
     for (int i = 0; i < ReturnFromPoints.size(); i++) {
@@ -1158,8 +1167,10 @@ Value *BlockAST::codegen() {
         Builder->CreateBr(AfterBB);
     }
     Builder->SetInsertPoint(AfterBB);
-    if (hasImmediateReturn)
-        PN->addIncoming(RetVal, CurrentBlock);
+    if (!hasImmediateReturn)
+        RetVal = Constant::getNullValue(ReturnFromPoints[0].second->getType());
+    PN->addIncoming(RetVal, CurrentBlock);
+
 
     // Remove self from block stack
     BlockStack.pop();
@@ -1185,7 +1196,6 @@ Value *IfExprAST::codegen() {
     if (Cond->getDatatype() != type_bool) {
         return LogErrorV("If condition should be a boolean value!");
     }
-    Type* retType = Type::getDoubleTy(*TheContext);
 
     Value *CondV = Cond->codegen();
     if (!CondV)
@@ -1214,7 +1224,6 @@ Value *IfExprAST::codegen() {
     // If "then" block does not have a semicolon, then if it is called, it should trigger a block return
     if (Then->getReturns() && BlockStack.size() > 0) {
         BlockStack.top()->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(ThenBB, ThenV));
-        retType = ThenV->getType();
     } else {
         Builder->CreateBr(MergeBB);
     }
@@ -1233,19 +1242,14 @@ Value *IfExprAST::codegen() {
     // If "else" block does not have a semicolon, then if it is called, it should trigger a block return
     if (Else->getReturns() && BlockStack.size() > 0) {
         BlockStack.top()->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(ElseBB, ElseV));
-        retType = ElseV->getType();
     } else {
         Builder->CreateBr(MergeBB);
     }
 
-
     // Emit merge block.
     TheFunction->insert(TheFunction->end(), MergeBB);
     Builder->SetInsertPoint(MergeBB);
-    PHINode *PN = Builder->CreatePHI(retType, 2, "iftmp");
-    PN->addIncoming(ThenV, ThenBB);
-    PN->addIncoming(ElseV, ElseBB);
-    return PN;
+    return Constant::getNullValue(Type::getDoubleTy(*TheContext));
 }
 
 Value *ForExprAST::codegen() {
@@ -1413,7 +1417,7 @@ Function *FunctionAST::codegen() { // Might have an error, details are in the tu
 
     // If this is an operator, install it.
     if (P.isBinaryOp())
-        BinopPrecedence[P.getOperatorName()] = P.getBinaryPrecedence();
+        BinopProperties[P.getOperatorName()].Precedence = P.getBinaryPrecedence();
 
     // Create a new basic block to start insertion into.
     BasicBlock *BB = BasicBlock::Create(*TheContext, "entry", TheFunction);
@@ -1455,23 +1459,23 @@ Function *FunctionAST::codegen() { // Might have an error, details are in the tu
 static void InitializeBinopPrecedence() {
     // Install standard binary operators.
     // 1 is lowest precedence.
-    BinopPrecedence['='] = 2; // Assignment
-    BinopPrecedence['|'] = 5; // Xor
-    BinopPrecedence[optok("||")] = 5; // Or
-    BinopPrecedence['&'] = 5; // And
-    BinopPrecedence['>'] = 10; // Greater Than
-    BinopPrecedence['<'] = 10; // Less Than
-    BinopPrecedence[optok("==")] = 10; // Equal
-    BinopPrecedence[optok("!=")] = 10; // Not Equal
-    BinopPrecedence[optok(">=")] = 10; // Greater than or equal
-    BinopPrecedence[optok("<=")] = 10; // Less than or equal
-    BinopPrecedence['+'] = 20; // Add
-    BinopPrecedence['-'] = 20; // Subtract
-    BinopPrecedence['*'] = 40; // Multiply
-    BinopPrecedence['/'] = 40; // Divide
-    BinopPrecedence['^'] = 50; // Exponent
-    //BinopPrecedence[optok("<<")] = 60; // Bitwise Shift
-    //BinopPrecedence[optok(">>")] = 60; // Bitwise Shift
+    BinopProperties['='] = {2, true,true, type_UNDECIDED}; // Assignment
+    BinopProperties['|'] = {5, false,true, type_bool}; // Xor
+    BinopProperties[optok("||")] = {5, false,true, type_bool}; // Or
+    BinopProperties['&'] = {5, false, true, type_bool}; // And
+    BinopProperties['>'] = {10, true, false, type_bool}; // Greater Than
+    BinopProperties['<'] = {10, false, false, type_bool}; // Less Than
+    BinopProperties[optok("==")] = {10, true, true, type_bool}; // Equal
+    BinopProperties[optok("!=")] = {10, true, true, type_bool}; // Not Equal
+    BinopProperties[optok(">=")] = {10, true, false, type_bool}; // Greater than or equal
+    BinopProperties[optok("<=")] = {10, true, false, type_bool}; // Less than or equal
+    BinopProperties['+'] = {20, true, false, type_double}; // Add
+    BinopProperties['-'] = {20, true, false, type_double}; // Subtract
+    BinopProperties['*'] = {40, true, false, type_double}; // Multiply
+    BinopProperties['/'] = {40, true, false, type_double}; // Divide
+    //BinopProperties['^'] = {50, true, false, type_bool}; // Exponent
+    //BinopProperties[optok("<<")] = 60; // Bitwise Shift
+    //BinopProperties[optok(">>")] = 60; // Bitwise Shift
 
     longops.push_back(optok("||"));
     longops.push_back(optok("=="));

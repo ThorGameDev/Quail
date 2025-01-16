@@ -30,6 +30,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <llvm/IR/Constant.h>
+#include <llvm/IR/Instruction.h>
 #include <llvm/IR/Value.h>
 #include <map>
 #include <memory>
@@ -41,6 +42,12 @@
 using namespace llvm;
 using namespace llvm::orc;
 
+
+enum DataType {
+    type_UNDECIDED = 999,
+    type_double = 0,
+    type_bool = 1,
+};
 
 //Lexer
 
@@ -79,8 +86,7 @@ enum Token {
     tok_unary = -12,
 
     // var definition
-    tok_double = -13,
-    tok_bool = -14,
+    tok_dtype = -13,
 };
 
 static int optok(std::string op) {
@@ -98,6 +104,7 @@ static std::string tokop(int op) {
 
 static std::string IdentifierStr; //Filled in if tok_identifier
 static double NumVal;             //Filled in if tok_number
+static DataType TokenDataType;             //Filled in if tok_number
 static std::vector<int> longops;
 
 // gettok - Return the next token from the standard input.
@@ -127,10 +134,14 @@ static int gettok() {
             return tok_binary;
         if (IdentifierStr == "unary")
             return tok_unary;
-        if (IdentifierStr == "double")
-            return tok_double;
-        if (IdentifierStr == "bool")
-            return tok_bool;
+        if (IdentifierStr == "double"){
+            TokenDataType = type_double;
+            return tok_dtype;
+        }
+        if (IdentifierStr == "bool"){
+            TokenDataType = type_bool;
+            return tok_dtype;
+        }
         if (IdentifierStr == "true")
             return tok_true;
         if (IdentifierStr == "false")
@@ -180,12 +191,6 @@ static int gettok() {
 }
 
 //AST
-
-enum DataType {
-    type_UNDECIDED = 999,
-    type_double = 0,
-    type_bool = 1,
-};
 
 /// ExprAST - Base class for all expression nodes
 class ExprAST { //To add types other than doubles, this would have a type field
@@ -337,6 +342,7 @@ public:
 /// of arguments the function takes).
 class PrototypeAST {
     std::string Name;
+    DataType ReturnType;
     std::vector<std::pair<std::string, DataType>> Args;
     bool IsOperator;
     unsigned Precedence; //Precedence if a binary op.
@@ -344,9 +350,10 @@ class PrototypeAST {
 
 public:
     PrototypeAST(const std::string &Name, std::vector<std::pair<std::string, DataType>> Args,
-                 bool IsOperator = false, unsigned Prec = 0, int OperatorName = 0)
+                 DataType returnType, bool IsOperator = false, unsigned Prec = 0,
+                 int OperatorName = 0)
         : Name(Name), Args(std::move(Args)), IsOperator(IsOperator),
-          Precedence(Prec), OperatorName(OperatorName) {}
+          Precedence(Prec), OperatorName(OperatorName), ReturnType(returnType) {}
 
     Function *codegen();
     const std::string &getName() const {
@@ -390,6 +397,7 @@ public:
 /// lexer and updates CurTok with its results.
 static int CurTok;
 static std::map<std::string, DataType> NamedValuesDatatype;
+static std::map<std::pair<std::string, std::vector<DataType>>, DataType> FunctionDataTypes;
 
 static int getNextToken() {
     return CurTok = gettok();
@@ -505,6 +513,14 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
     // Eat the ')'
     getNextToken();
 
+    std::vector<DataType> argsig;
+    for (int i = 0; i < Args.size(); i++){
+        argsig.push_back(Args[i]->getDatatype());
+    }
+    if (FunctionDataTypes.count(std::make_pair(IdName, argsig)) == 0){
+        return LogError("No function of signature exists");
+    }
+
     return std::make_unique<CallExprAST>(IdName, std::move(Args));
 }
 
@@ -616,10 +632,8 @@ static std::unique_ptr<ExprAST> ParseVarExpr() {
     }
 
     DataType dtype = type_UNDECIDED;
-    if (CurTok == tok_double)
-        dtype = type_double;
-    else if (CurTok == tok_bool)
-        dtype = type_bool;
+    if (CurTok == tok_dtype)
+        dtype = TokenDataType;
     else
         return LogError("Invalid datatype passed to 'ParseVarExpr()'");
     getNextToken(); // eat the var.
@@ -691,8 +705,7 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
         return ParseIfExpr();
     case tok_for:
         return ParseForExpr();
-    case tok_double:
-    case tok_bool:
+    case tok_dtype:
         return ParseVarExpr();
     }
 }
@@ -813,6 +826,13 @@ static std::unique_ptr<LineAST> ParseLine() {
 /// ::= unary LETTER (id)
 static std::unique_ptr<PrototypeAST> ParsePrototype() {
     std::string FnName;
+    DataType ReturnType;
+    
+    if(CurTok == tok_dtype)
+        ReturnType = TokenDataType;
+    else 
+        return LogErrorP("No type specified in prototype");
+    getNextToken(); // Eat datatype
 
     unsigned Kind = 0; // 0 = identifier, 1 = unary, 2 = binary.
     unsigned BinaryPrecedence = 30;
@@ -870,17 +890,17 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
         break;
     }
 
+
     if (CurTok != '(')
         return LogErrorP("Expected '(' in prototype");
     getNextToken(); // Eat '('
 
     std::vector<std::pair<std::string, DataType>> Arguments;
+    std::vector<DataType> argsig;
     while (true){
         DataType dtype;
-        if (CurTok == tok_double)
-            dtype = type_double;
-        else if (CurTok == tok_bool)
-            dtype = type_bool;
+        if (CurTok == tok_dtype)
+            dtype = TokenDataType;
         else
             break;
         getNextToken(); // Eat datatype
@@ -889,6 +909,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
             return LogErrorP("Expected name after variable datatype");
         }
         Arguments.push_back(std::make_pair(IdentifierStr, dtype));
+        argsig.push_back(dtype);
         NamedValuesDatatype[IdentifierStr] = dtype;
         getNextToken(); // Eat name
 
@@ -906,7 +927,9 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
     if (Kind && Arguments.size() != Kind)
         return LogErrorP("Invalid number of operands for operator");
 
-    return std::make_unique<PrototypeAST>(FnName, std::move(Arguments), Kind != 0, BinaryPrecedence, OperatorName);
+    FunctionDataTypes[std::make_pair(FnName, std::move(argsig))] = ReturnType;
+
+    return std::make_unique<PrototypeAST>(FnName, std::move(Arguments), ReturnType, Kind != 0, BinaryPrecedence, OperatorName);
 }
 
 /// definition ::= 'def' prototype expression
@@ -933,7 +956,7 @@ static std::unique_ptr<PrototypeAST> ParseExtern() {
 static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
     if (auto E = ParseLine()) {
         // Make an anonymous proto.
-        auto Proto = std::make_unique<PrototypeAST>("__anon_expr", std::vector<std::pair<std::string, DataType>>());
+        auto Proto = std::make_unique<PrototypeAST>("__anon_expr", std::vector<std::pair<std::string, DataType>>(), type_double);
         return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
     }
     return nullptr;
@@ -1458,7 +1481,7 @@ Function *PrototypeAST::codegen() {
     }
 
     FunctionType *FT =
-        FunctionType::get(Type::getDoubleTy(*TheContext), TypeVector, false);
+        FunctionType::get(getType(ReturnType), TypeVector, false);
 
     Function *F =
         Function::Create(FT, Function::ExternalLinkage, Name, TheModule.get());

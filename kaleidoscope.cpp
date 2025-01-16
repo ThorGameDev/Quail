@@ -233,12 +233,11 @@ public:
 };
 
 /// VariableExprAST - Expression class for referencing a variable, like "a"
-/// USES TEMPORARY DATATYPE
 class VariableExprAST : public ExprAST {
     std::string Name;
 
 public:
-    VariableExprAST(const std::string &Name) : Name(Name), ExprAST(type_double) {}
+    VariableExprAST(const std::string &Name, DataType dtype) : Name(Name), ExprAST(dtype) {}
     Value *codegen() override;
     const std::string &getName() const {
         return Name;
@@ -327,8 +326,8 @@ class VarExprAST : public ExprAST {
     std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
 
 public:
-    VarExprAST(std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames)
-        : VarNames(std::move(VarNames)), ExprAST(type_double) {}
+    VarExprAST(std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames, DataType dtype)
+        : VarNames(std::move(VarNames)), ExprAST(dtype) {}
 
     Value *codegen() override;
 };
@@ -338,13 +337,13 @@ public:
 /// of arguments the function takes).
 class PrototypeAST {
     std::string Name;
-    std::vector<std::string> Args;
+    std::vector<std::pair<std::string, DataType>> Args;
     bool IsOperator;
     unsigned Precedence; //Precedence if a binary op.
     int OperatorName;
 
 public:
-    PrototypeAST(const std::string &Name, std::vector<std::string> Args,
+    PrototypeAST(const std::string &Name, std::vector<std::pair<std::string, DataType>> Args,
                  bool IsOperator = false, unsigned Prec = 0, int OperatorName = 0)
         : Name(Name), Args(std::move(Args)), IsOperator(IsOperator),
           Precedence(Prec), OperatorName(OperatorName) {}
@@ -390,6 +389,8 @@ public:
 /// token the parser is looking at. getNextToken reads another token from the
 /// lexer and updates CurTok with its results.
 static int CurTok;
+static std::map<std::string, DataType> NamedValuesDatatype;
+
 static int getNextToken() {
     return CurTok = gettok();
 }
@@ -432,6 +433,42 @@ static std::unique_ptr<ExprAST> ParseParenExpr() {
     return V;
 }
 
+// USES PLACEHOLDER DTYPE
+struct ParserBlockStackData {
+    DataType blockDtype = type_UNDECIDED;
+    std::map<std::string, DataType> outerVariables;
+    std::vector<std::string> localVariables;
+};
+static std::stack<ParserBlockStackData*> ParseBlockStack;
+static std::unique_ptr<ExprAST> ParseBlock() {
+    getNextToken(); // Eat {
+    std::vector<std::unique_ptr<LineAST>> lines;
+    ParserBlockStackData data = ParserBlockStackData();
+    ParseBlockStack.push(&data);
+    while (CurTok != '}') {
+        std::unique_ptr<LineAST> line = ParseLine();
+        if(line->getReturns()) {
+            if (data.blockDtype == type_UNDECIDED)
+                data.blockDtype = line->getDatatype();
+            else if (data.blockDtype != line->getDatatype())
+                return LogError("Block can not have multiple return types");
+        }
+        lines.push_back(std::move(line));
+    }
+    ParseBlockStack.pop();
+    getNextToken(); // Eat '}'
+    // Remove all local variables from scope
+    for (int i = 0; i < data.localVariables.size(); i++){
+        if(data.outerVariables.count(data.localVariables[i]) != 0)
+            NamedValuesDatatype[data.localVariables[i]] = data.outerVariables[data.localVariables[i]];
+        else
+            NamedValuesDatatype.erase(data.localVariables[i]);
+    }
+    if (data.blockDtype == type_UNDECIDED)
+        data.blockDtype = type_double;
+    return std::make_unique<BlockAST>(std::move(lines), data.blockDtype);
+}
+
 /// identifierexpr
 /// ::=identifier
 /// ::=identifier '(' expression* ')'
@@ -439,8 +476,12 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
     std::string IdName = IdentifierStr;
 
     getNextToken(); // eat identifier.
-    if (CurTok != '(') // Simple variable ref.
-        return std::make_unique<VariableExprAST>(IdName);
+    if (CurTok != '('){ // Simple variable ref.
+        if (NamedValuesDatatype.count(IdName) == 0){
+            return LogError("Variable does not exist!");
+        }
+        return std::make_unique<VariableExprAST>(IdName, NamedValuesDatatype[IdName]);
+    }
 
     // Call.
     getNextToken(); //eat (
@@ -467,35 +508,6 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
     return std::make_unique<CallExprAST>(IdName, std::move(Args));
 }
 
-// USES PLACEHOLDER DTYPE
-// these two global values are used exclusively inside of parse block, and parse if.
-// Their purpose is so that any if statement contained within a block can effect the
-// overall block's return type, or throw an error if the return type is different from
-// expected.
-static bool inBlock;
-static DataType blockDtype;
-static std::unique_ptr<ExprAST> ParseBlock() {
-    getNextToken(); // Eat {
-    std::vector<std::unique_ptr<LineAST>> lines;
-    inBlock = true;
-    blockDtype = type_UNDECIDED;
-    while (CurTok != '}') {
-        std::unique_ptr<LineAST> line = ParseLine();
-        if(line->getReturns()) {
-            if (blockDtype == type_UNDECIDED)
-                blockDtype = line->getDatatype();
-            if (blockDtype != line->getDatatype())
-                return LogError("Block can not have multiple return types");
-        }
-        lines.push_back(std::move(line));
-    }
-    inBlock = false;
-    getNextToken(); // Eat '}'
-    if (blockDtype == type_UNDECIDED)
-        blockDtype = type_double;
-    return std::make_unique<BlockAST>(std::move(lines), blockDtype);
-}
-
 static std::unique_ptr<ExprAST> ParseIfExpr() {
     getNextToken(); // eat the if.
 
@@ -516,10 +528,10 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
     if (!Then)
         return nullptr;
 
-    if(Then->getReturns() && inBlock) {
-        if (blockDtype == type_UNDECIDED)
-            blockDtype = Then->getDatatype();
-        else if (blockDtype != Then->getDatatype())
+    if(Then->getReturns() && !ParseBlockStack.empty()) {
+        if (ParseBlockStack.top()->blockDtype == type_UNDECIDED)
+            ParseBlockStack.top()->blockDtype = Then->getDatatype();
+        else if (ParseBlockStack.top()->blockDtype != Then->getDatatype())
             return LogError("Block can not have multiple return types");
     }
 
@@ -531,10 +543,10 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
     if (!Else)
         return nullptr;
 
-    if(Else->getReturns() && inBlock) {
-        if (blockDtype == type_UNDECIDED)
-            blockDtype = Else->getDatatype();
-        else if (blockDtype != Else->getDatatype())
+    if(Else->getReturns() && !ParseBlockStack.empty()) {
+        if (ParseBlockStack.top()->blockDtype == type_UNDECIDED)
+            ParseBlockStack.top()->blockDtype = Else->getDatatype();
+        else if (ParseBlockStack.top()->blockDtype != Else->getDatatype())
             return LogError("Block can not have multiple return types");
     }
 
@@ -599,6 +611,17 @@ static std::unique_ptr<ExprAST> ParseForExpr() {
 /// varexpr :: 'var' identifier ('=' expression)?
 ///                 (',' identifier ('=' expression)?)* 'in' expression
 static std::unique_ptr<ExprAST> ParseVarExpr() {
+    if (ParseBlockStack.size() == 0) {
+        return LogError("Variable must be contained in a block");
+    }
+
+    DataType dtype = type_UNDECIDED;
+    if (CurTok == tok_double)
+        dtype = type_double;
+    else if (CurTok == tok_bool)
+        dtype = type_bool;
+    else
+        return LogError("Invalid datatype passed to 'ParseVarExpr()'");
     getNextToken(); // eat the var.
 
     std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
@@ -609,6 +632,13 @@ static std::unique_ptr<ExprAST> ParseVarExpr() {
 
     while (true) {
         std::string Name = IdentifierStr;
+        ParseBlockStack.top()->localVariables.push_back(Name);
+        if (NamedValuesDatatype.count(Name) == 0){
+            NamedValuesDatatype[Name] = dtype;
+        }
+        else {
+            ParseBlockStack.top()->outerVariables[Name] = NamedValuesDatatype[Name];
+        }
         getNextToken(); // eat identifier.
 
         // Read the optional initializer.
@@ -632,7 +662,7 @@ static std::unique_ptr<ExprAST> ParseVarExpr() {
 
     // Check and consume In omitted
 
-    return std::make_unique<VarExprAST>(std::move(VarNames));
+    return std::make_unique<VarExprAST>(std::move(VarNames), dtype);
 }
 
 /// primary
@@ -662,6 +692,7 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
     case tok_for:
         return ParseForExpr();
     case tok_double:
+    case tok_bool:
         return ParseVarExpr();
     }
 }
@@ -841,10 +872,30 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 
     if (CurTok != '(')
         return LogErrorP("Expected '(' in prototype");
+    getNextToken(); // Eat '('
 
-    std::vector<std::string> ArgNames;
-    while (getNextToken() == tok_identifier)
-        ArgNames.push_back(IdentifierStr);
+    std::vector<std::pair<std::string, DataType>> Arguments;
+    while (true){
+        DataType dtype;
+        if (CurTok == tok_double)
+            dtype = type_double;
+        else if (CurTok == tok_bool)
+            dtype = type_bool;
+        else
+            break;
+        getNextToken(); // Eat datatype
+
+        if (CurTok != tok_identifier){
+            return LogErrorP("Expected name after variable datatype");
+        }
+        Arguments.push_back(std::make_pair(IdentifierStr, dtype));
+        NamedValuesDatatype[IdentifierStr] = dtype;
+        getNextToken(); // Eat name
+
+        if (CurTok != ',')
+            break;
+        getNextToken();
+    }
     if (CurTok != ')')
         return LogErrorP("Expected ')' in prototype");
 
@@ -852,10 +903,10 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
     getNextToken(); // eat ')'.
 
     // Verify right number of names for operator.
-    if (Kind && ArgNames.size() != Kind)
+    if (Kind && Arguments.size() != Kind)
         return LogErrorP("Invalid number of operands for operator");
 
-    return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames), Kind != 0, BinaryPrecedence, OperatorName);
+    return std::make_unique<PrototypeAST>(FnName, std::move(Arguments), Kind != 0, BinaryPrecedence, OperatorName);
 }
 
 /// definition ::= 'def' prototype expression
@@ -882,7 +933,7 @@ static std::unique_ptr<PrototypeAST> ParseExtern() {
 static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
     if (auto E = ParseLine()) {
         // Make an anonymous proto.
-        auto Proto = std::make_unique<PrototypeAST>("__anon_expr", std::vector<std::string>());
+        auto Proto = std::make_unique<PrototypeAST>("__anon_expr", std::vector<std::pair<std::string, DataType>>());
         return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
     }
     return nullptr;
@@ -906,11 +957,11 @@ static std::unique_ptr<StandardInstrumentations> TheSI;
 static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
 static ExitOnError ExitOnErr;
 
-static AllocaInst *CreateEntryBlockAlloca(Function *TheFunction,
-        StringRef VarName) {
+static AllocaInst* CreateEntryBlockAlloca(Function* TheFunction,
+        StringRef VarName, Type* dtype) {
     IRBuilder<> TmpB(&TheFunction->getEntryBlock(),
                      TheFunction->getEntryBlock().begin());
-    return TmpB.CreateAlloca(Type::getDoubleTy(*TheContext), nullptr,
+    return TmpB.CreateAlloca(dtype, nullptr,
                              VarName);
 }
 
@@ -931,6 +982,18 @@ Function *getFunction(std::string Name) {
         return FI->second->codegen();
 
     // If no existing prototype exists, return null.
+    return nullptr;
+}
+
+Type *getType(DataType dtype){
+    if (dtype == type_double){
+        return Type::getDoubleTy(*TheContext);
+    }
+    else if (dtype == type_bool){
+        return Type::getInt1Ty(*TheContext);
+    }
+    LogError("No type exists!");
+    abort();
     return nullptr;
 }
 
@@ -1254,6 +1317,7 @@ Value *IfExprAST::codegen() {
     return Constant::getNullValue(Type::getDoubleTy(*TheContext));
 }
 
+// USES TEMPORARY DTYPE
 Value *ForExprAST::codegen() {
     if (End->getDatatype() != type_bool) {
         return LogErrorV("For loop condition should be bool type");
@@ -1262,7 +1326,7 @@ Value *ForExprAST::codegen() {
     Function *TheFunction = Builder->GetInsertBlock()->getParent();
 
     //Create an alloca for the variable in the entry block.
-    AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName);
+    AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName, Type::getDoubleTy(*TheContext));
 
     // Emit the start code first, without 'variable' in scope.
     Value *StartVal = Start->codegen();
@@ -1340,10 +1404,6 @@ Value *ForExprAST::codegen() {
 }
 
 Value *VarExprAST::codegen() {
-    if (BlockStack.size() == 0) {
-        return LogErrorV("Variable must be contained in a block");
-    }
-
     std::vector<AllocaInst *> OldBindings;
 
     Function *TheFunction = Builder->GetInsertBlock()->getParent();
@@ -1368,7 +1428,7 @@ Value *VarExprAST::codegen() {
             InitVal = ConstantFP::get(*TheContext, APFloat(0.0));
         }
 
-        AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName);
+        AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName, InitVal->getType());
         Builder->CreateStore(InitVal, Alloca);
 
         // Remember the old variable binding so that we can restore the binding when
@@ -1392,10 +1452,13 @@ Value *VarExprAST::codegen() {
 
 Function *PrototypeAST::codegen() {
     // Make the function type: double(double,double) etc.
-    std::vector<Type*> Doubles(Args.size(), Type::getDoubleTy(*TheContext));
+    std::vector<Type*> TypeVector;
+    for (int i = 0; i < Args.size(); i++){
+        TypeVector.push_back(getType(Args[i].second));
+    }
 
     FunctionType *FT =
-        FunctionType::get(Type::getDoubleTy(*TheContext), Doubles, false);
+        FunctionType::get(Type::getDoubleTy(*TheContext), TypeVector, false);
 
     Function *F =
         Function::Create(FT, Function::ExternalLinkage, Name, TheModule.get());
@@ -1403,11 +1466,12 @@ Function *PrototypeAST::codegen() {
     // Set names for all arguments.
     unsigned Idx = 0;
     for (auto &Arg : F->args())
-        Arg.setName(Args[Idx++]);
+        Arg.setName(Args[Idx++].first);
 
     return F;
 }
 
+// USES TEMPORARY DTYPE
 Function *FunctionAST::codegen() { // Might have an error, details are in the tutorial
     // Transfer ownership of the protype to the FunctionProtos map, but keep a
     // reference to it for use below.
@@ -1429,7 +1493,7 @@ Function *FunctionAST::codegen() { // Might have an error, details are in the tu
     NamedValues.clear();
     for (auto &Arg : TheFunction->args()) {
         // Create an alloca for this variable.
-        AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, Arg.getName());
+        AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, Arg.getName(), Arg.getType());
 
         // Store the initial value into the alloca.
         Builder->CreateStore(&Arg, Alloca);

@@ -29,6 +29,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <iterator>
+#include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/Constant.h>
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/Value.h>
@@ -45,8 +47,13 @@ using namespace llvm::orc;
 
 enum DataType {
     type_UNDECIDED = 999,
-    type_double = 0,
-    type_bool = 1,
+    type_bool = 0,
+    type_i8 = 1,
+    type_i16 = 2,
+    type_i32 = 3,
+    type_i64 = 3,
+    type_float = 4,
+    type_double = 5,
 };
 
 //Lexer
@@ -73,20 +80,20 @@ enum Token {
     //primary
     tok_identifier = -4,
     tok_number = -5,
-    tok_true = -6,
-    tok_false = -7,
+    tok_true = -10,
+    tok_false = -11,
 
     // control
-    tok_if = -8,
-    tok_else = -9,
-    tok_for = -10,
+    tok_if = -12,
+    tok_else = -13,
+    tok_for = -14,
 
     //operators
-    tok_binary = -11,
-    tok_unary = -12,
+    tok_binary = -15,
+    tok_unary = -16,
 
     // var definition
-    tok_dtype = -13,
+    tok_dtype = -17,
 };
 
 static int optok(std::string op) {
@@ -104,7 +111,8 @@ static std::string tokop(int op) {
 
 static std::string IdentifierStr; //Filled in if tok_identifier
 static double NumVal;             //Filled in if tok_number
-static DataType TokenDataType;             //Filled in if tok_number
+static int64_t INumVal;             //Filled in if tok_number
+static DataType TokenDataType;
 static std::vector<int> longops;
 
 // gettok - Return the next token from the standard input.
@@ -138,8 +146,28 @@ static int gettok() {
             TokenDataType = type_double;
             return tok_dtype;
         }
+        if (IdentifierStr == "float"){
+            TokenDataType = type_float;
+            return tok_dtype;
+        }
         if (IdentifierStr == "bool"){
             TokenDataType = type_bool;
+            return tok_dtype;
+        }
+        if (IdentifierStr == "i64"){
+            TokenDataType = type_i64;
+            return tok_dtype;
+        }
+        if (IdentifierStr == "i32"){
+            TokenDataType = type_i32;
+            return tok_dtype;
+        }
+        if (IdentifierStr == "i16"){
+            TokenDataType = type_i16;
+            return tok_dtype;
+        }
+        if (IdentifierStr == "i8"){
+            TokenDataType = type_i8;
             return tok_dtype;
         }
         if (IdentifierStr == "true")
@@ -150,14 +178,51 @@ static int gettok() {
         return tok_identifier;
     }
 
-    if (isdigit(LastChar) || LastChar == '.') { //Fix 1.23.45.67
+    if (isdigit(LastChar) || LastChar == '.') {
         std::string NumStr;
+        std::string INumStr;
+        bool isInt = true;
         do {
+            if (LastChar == '.')
+                isInt = false;
+            if (isInt)
+                INumStr += LastChar;
             NumStr += LastChar;
             LastChar = getchar();
         } while (isdigit(LastChar) || LastChar == '.');
 
+
         NumVal = strtod(NumStr.c_str(), 0);
+        INumVal = strtol(INumStr.c_str(), 0, 10);
+        if (LastChar == ':'){
+            LastChar = getchar();
+            std::string ExplicitType;
+            do {
+                ExplicitType += LastChar;
+                LastChar = getchar();
+            } 
+            while(isdigit(LastChar) || LastChar == 'i' || LastChar == 'f' || LastChar == 'd');
+            if (ExplicitType == "i64")
+                TokenDataType = type_i64;
+            if (ExplicitType == "i64")
+                TokenDataType = type_i64;
+            if (ExplicitType == "i32")
+                TokenDataType = type_i32;
+            if (ExplicitType == "i16")
+                TokenDataType = type_i16;
+            if (ExplicitType == "i8")
+                TokenDataType = type_i8;
+            if (ExplicitType == "d")
+                TokenDataType = type_double;
+            if (ExplicitType == "f")
+                TokenDataType = type_float;
+        }
+        else {
+            if (NumVal != INumVal)
+                TokenDataType = type_i32;
+            else
+                TokenDataType = type_double;
+        }
         return tok_number;
     }
 
@@ -225,6 +290,51 @@ class DoubleExprAST : public ExprAST {
 
 public:
     DoubleExprAST(double Val) : Val(Val), ExprAST(type_double) {}
+    Value *codegen() override;
+};
+
+/// FloatExprAST - Expression class for numeric literals like "1.0".
+class FloatExprAST : public ExprAST {
+    float Val;
+
+public:
+    FloatExprAST(double Val) : Val(Val), ExprAST(type_float) {}
+    Value *codegen() override;
+};
+
+/// I64ExprAST - Expression class for 32 bit integers
+class I64ExprAST : public ExprAST {
+    int64_t Val;
+
+public:
+    I64ExprAST(int64_t Val) : Val(Val), ExprAST(type_i64) {}
+    Value *codegen() override;
+};
+
+/// I32ExprAST - Expression class for 32 bit integers
+class I32ExprAST : public ExprAST {
+    int32_t Val;
+
+public:
+    I32ExprAST(int32_t Val) : Val(Val), ExprAST(type_i32) {}
+    Value *codegen() override;
+};
+
+/// I16ExprAST - Expression class for 16 bit integers
+class I16ExprAST : public ExprAST {
+    int16_t Val;
+
+public:
+    I16ExprAST(int16_t Val) : Val(Val), ExprAST(type_i16) {}
+    Value *codegen() override;
+};
+
+/// I8ExprAST - Expression class for 8 bit integers
+class I8ExprAST : public ExprAST {
+    int8_t Val;
+
+public:
+    I8ExprAST(int8_t Val) : Val(Val), ExprAST(type_i8) {}
     Value *codegen() override;
 };
 
@@ -416,11 +526,39 @@ std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
 static std::unique_ptr<ExprAST> ParseExpression();
 static std::unique_ptr<LineAST> ParseLine();
 
-/// numberexpr ::= number
-static std::unique_ptr<ExprAST> ParseDoubleExpr() {
-    auto Result = std::make_unique<DoubleExprAST>(NumVal);
-    getNextToken(); // consume the number
-    return std::move(Result);
+static std::unique_ptr<ExprAST> ParseNumberExpr() {
+    if (TokenDataType == type_double){
+        auto Result = std::make_unique<DoubleExprAST>(NumVal);
+        getNextToken(); // consume the number
+        return Result;
+    } 
+    if (TokenDataType == type_float){
+        auto Result = std::make_unique<FloatExprAST>((float)NumVal);
+        getNextToken(); // consume the number
+        return Result;
+    } 
+    else if (TokenDataType == type_i64){
+        auto Result = std::make_unique<I64ExprAST>(INumVal);
+        getNextToken(); // consume the number
+        return Result;
+    }
+    else if (TokenDataType == type_i32){
+        auto Result = std::make_unique<I32ExprAST>((int32_t)INumVal);
+        getNextToken(); // consume the number
+        return Result;
+    }
+    else if (TokenDataType == type_i16){
+        auto Result = std::make_unique<I16ExprAST>((int16_t)INumVal);
+        getNextToken(); // consume the number
+        return Result;
+    }
+    else if (TokenDataType == type_i8){
+        auto Result = std::make_unique<I8ExprAST>((int8_t)INumVal);
+        getNextToken(); // consume the number
+        return Result;
+    }
+
+    return LogError("Invalid datatype");
 }
 
 static std::unique_ptr<ExprAST> ParseBoolExpr() {
@@ -693,7 +831,7 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
     case tok_identifier:
         return ParseIdentifierExpr();
     case tok_number:
-        return ParseDoubleExpr();
+        return ParseNumberExpr();
     case tok_true:
     case tok_false:
         return ParseBoolExpr();
@@ -714,9 +852,7 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
 /// defined.
 struct BinopProperty{
     int Precedence;
-    bool AllowDouble;
-    bool AllowBool;
-    DataType returnType;
+    std::map<std::pair<DataType, DataType>, DataType> CompatibilityChart;
 };
 static std::map<int, BinopProperty> BinopProperties;
 
@@ -779,19 +915,14 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
         }
         //Merge LHS/RHS.
 
-        if(LHS->getDatatype() != RHS->getDatatype()) {
-            return LogError("Both sides of the operation must be the same type.");
-        }
-        if (!BinopProperties[BinOp].AllowBool && LHS->getDatatype() == type_bool){
-            return LogError("Binop does not allow boolean input.");
-        }
-        if (!BinopProperties[BinOp].AllowDouble && LHS->getDatatype() == type_double){
-            return LogError("Binop does not allow double input.");
-        }
-        DataType returnType = BinopProperties[BinOp].returnType;
+        std::pair<DataType, DataType> OperationTyping = std::make_pair(LHS->getDatatype(), RHS->getDatatype());
 
-        LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS),
-                                              std::move(RHS), returnType);
+        if(BinopProperties[BinOp].CompatibilityChart.count(OperationTyping) == 0) {
+            return LogError("Can not perform operation between those types");
+        }
+        DataType returnType = BinopProperties[BinOp].CompatibilityChart[OperationTyping];
+
+        LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS), returnType);
     }
 }
 
@@ -882,9 +1013,9 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 
         // Read the precedence if present.
         if (CurTok == tok_number) {
-            if (NumVal < 1 || NumVal > 100)
+            if (INumVal < 1 || INumVal > 100)
                 return LogErrorP("Invalid precedence: must be 1..100");
-            BinaryPrecedence = (unsigned)NumVal;
+            BinaryPrecedence = (unsigned)INumVal;
             getNextToken();
         }
         break;
@@ -1012,8 +1143,23 @@ Type *getType(DataType dtype){
     if (dtype == type_double){
         return Type::getDoubleTy(*TheContext);
     }
+    if (dtype == type_float){
+        return Type::getFloatTy(*TheContext);
+    }
     else if (dtype == type_bool){
         return Type::getInt1Ty(*TheContext);
+    }
+    else if (dtype == type_i8){
+        return Type::getInt8Ty(*TheContext);
+    }
+    else if (dtype == type_i16){
+        return Type::getInt16Ty(*TheContext);
+    }
+    else if (dtype == type_i32){
+        return Type::getInt32Ty(*TheContext);
+    }
+    else if (dtype == type_i64){
+        return Type::getInt64Ty(*TheContext);
     }
     LogError("No type exists!");
     abort();
@@ -1022,6 +1168,27 @@ Type *getType(DataType dtype){
 
 Value *DoubleExprAST::codegen() {
     return ConstantFP::get(*TheContext, APFloat(Val));
+}
+
+/// FIX AND TURN INTO FLOATING POINT INSTEAD OF DOUBLE.
+Value *FloatExprAST::codegen() {
+    return ConstantFP::get(*TheContext, APFloat(Val));
+}
+
+Value *I64ExprAST::codegen() {
+    return ConstantInt::get(*TheContext, APInt(64, Val));
+}
+
+Value *I32ExprAST::codegen() {
+    return ConstantInt::get(*TheContext, APInt(32, Val));
+}
+
+Value *I16ExprAST::codegen() {
+    return ConstantInt::get(*TheContext, APInt(16, Val));
+}
+
+Value *I8ExprAST::codegen() {
+    return ConstantInt::get(*TheContext, APInt(8, Val));
 }
 
 Value *BoolExprAST::codegen() {
@@ -1038,56 +1205,147 @@ Value *VariableExprAST::codegen() {
 }
 
 namespace BinOps {
+DataType priorities[] = {type_i64, type_double,type_i32, type_float,type_i16, type_i8, type_bool};
+
 Value *toBool(Value* input) {
     return Builder->CreateFCmpONE(input,ConstantFP::get(*TheContext, APFloat(0.0)), "tobool");
 }
-Value* toFloat(Value* input) {
+Value* toDouble(Value* input) {
     return Builder->CreateUIToFP(input, Type::getDoubleTy(*TheContext), "tofloat");
+};
+
+bool isSigned(DataType dtype){
+    if (dtype == type_bool) { return false; }
+    else { return true; }
+}
+
+Value* expandDataType(Value* input, DataType target, DataType prior){
+    if (prior == target){
+        return input;
+    }
+    if (target == type_double){
+        if(prior != type_float){
+            if (isSigned(prior)){
+                return Builder->CreateSIToFP(input, getType(target));
+            }
+            else {
+                return Builder->CreateUIToFP(input, getType(target));
+            }
+        } 
+        else {
+            return Builder->CreateFPExt(input, getType(target));
+        }
+    }
+    else if (target == type_float) {
+        return Builder->CreateSIToFP(input, getType(target));
+    }
+    else {
+        return Builder->CreateSExt(input, getType(target));
+    }
+};
+
+std::pair<Value*, Value*> expandOperation(DataType LHS, DataType RHS, Value* L, Value* R){
+    DataType biggerType;
+    for(int i = 0; i < std::size(priorities); i++){
+        if (LHS == priorities[i] || RHS == priorities[i]){
+            biggerType = priorities[i];
+            break;
+        }
+    }
+    Value* LExt = expandDataType(L, biggerType, LHS);
+    Value* RExt = expandDataType(R, biggerType, RHS);
+    return std::make_pair(LExt, RExt);
 };
 
 /// 0: Or
 /// 1: Xor
 /// 2: And
 Value* LogicGate(DataType LHS, DataType RHS, Value* L, Value* R, int gate) {
-    if (LHS != type_bool)
-        L = toBool(L);
-    Value* R_bool = R;
-    if (RHS != type_bool)
-        R_bool = toBool(R_bool);
+    std::pair<Value*, Value*> parts = expandOperation(LHS, RHS, L, R);
 
     if (gate == 0)
-        L = Builder->CreateOr(L, R_bool, "ortmp");
+        return Builder->CreateOr(parts.first, parts.second, "ortmp");
     else if (gate == 1)
-        L = Builder->CreateXor(L, R_bool, "xortmp");
+        return Builder->CreateXor(parts.first, parts.second, "xortmp");
     else if (gate == 2)
-        L = Builder->CreateAnd(L, R_bool, "andtmp");
+        return Builder->CreateAnd(parts.first, parts.second, "andtmp");
 
-    return L;
+    return LogErrorV("In issue has occured wiht the logic gate.");
 };
 
 Value* EqualityCheck(DataType LHS, DataType RHS, Value* L, Value* R, int Op) {
-    if (LHS != type_double)
-        L = toFloat(L);
-    Value* R_float = R;
-    if (RHS != type_double)
-        R_float = toFloat(R);
+    std::pair<Value*, Value*> parts = expandOperation(LHS, RHS, L, R);
 
     if (Op == '<')
-        return Builder->CreateFCmpULT(L, R_float, "tlttmp");
+        return Builder->CreateFCmpULT(parts.first, parts.second, "tlttmp");
     else if (Op == '>')
-        return Builder->CreateFCmpUGT(L, R_float, "tgttmp");
+        return Builder->CreateFCmpUGT(parts.first, parts.second, "tgttmp");
     else if (Op == op_eq)
-        return Builder->CreateFCmpUEQ(L, R_float, "teqtmp");
+        return Builder->CreateFCmpUEQ(parts.first, parts.second, "teqtmp");
     else if (Op == op_geq)
-        return Builder->CreateFCmpUGE(L, R_float, "tgetmp");
+        return Builder->CreateFCmpUGE(parts.first, parts.second, "tgetmp");
     else if (Op == op_leq)
-        return Builder->CreateFCmpULE(L, R_float, "tletmp");
+        return Builder->CreateFCmpULE(parts.first, parts.second, "tletmp");
     else if (Op == op_neq)
-        return Builder->CreateFCmpUNE(L, R_float, "tnetmp");
+        return Builder->CreateFCmpUNE(parts.first, parts.second, "tnetmp");
 
 
     return LogErrorV("Equality check did not exist");
-}
+};
+
+Value* Add(DataType LHS, DataType RHS, Value* L, Value* R){
+    std::pair<Value*, Value*> parts = expandOperation(LHS, RHS, L, R);
+
+    if (LHS == type_double || LHS == type_float || RHS == type_double ||
+            RHS == type_float){
+        return Builder->CreateFAdd(parts.first, parts.second, "addtmp");
+    }
+    else{
+        return Builder->CreateAdd(parts.first, parts.second, "addtmp");
+    }
+};
+Value* Sub(DataType LHS, DataType RHS, Value* L, Value* R){
+    std::pair<Value*, Value*> parts = expandOperation(LHS, RHS, L, R);
+
+    if (LHS == type_double || LHS == type_float || RHS == type_double ||
+            RHS == type_float){
+        return Builder->CreateFSub(parts.first, parts.second, "subtmp");
+    }
+    else{
+        return Builder->CreateSub(parts.first, parts.second, "subtmp");
+    }
+};
+Value* Mul(DataType LHS, DataType RHS, Value* L, Value* R){
+    std::pair<Value*, Value*> parts = expandOperation(LHS, RHS, L, R);
+
+    if (LHS == type_double || LHS == type_float || RHS == type_double ||
+            RHS == type_float){
+        return Builder->CreateFMul(parts.first, parts.second, "multmp");
+    }
+    else{
+        return Builder->CreateMul(parts.first, parts.second, "multmp");
+    }
+};
+Value* Div(DataType LHS, DataType RHS, Value* L, Value* R){
+    std::pair<Value*, Value*> parts = expandOperation(LHS, RHS, L, R);
+
+    if (LHS == type_double || LHS == type_float || RHS == type_double ||
+            RHS == type_float){
+        return Builder->CreateFDiv(parts.first, parts.second, "divtmp");
+    }
+    else{
+        return Builder->CreateSDiv(parts.first, parts.second, "divtmp");
+    }
+};
+
+Value* Neg(DataType dtype, Value* input){
+    if (dtype == type_float){
+        return Builder->CreateFNeg(input, "negtmp");
+    }
+    else{
+        return Builder->CreateNeg(input, "negtmp");
+    }
+};
 }
 
 Value *BinaryExprAST::codegen() {
@@ -1122,13 +1380,13 @@ Value *BinaryExprAST::codegen() {
 
     switch (Op) {
     case '+':
-        return Builder->CreateFAdd(L, R, "addtmp");
+        return BinOps::Add(LT, RT, L, R);
     case '-':
-        return Builder->CreateFSub(L, R, "subtmp");
+        return BinOps::Sub(LT, RT, L, R);
     case '*':
-        return Builder->CreateFMul(L, R, "multmp");
+        return BinOps::Mul(LT, RT, L, R);
     case '/':
-        return Builder->CreateFDiv(L, R, "divtmp");
+        return BinOps::Div(LT, RT, L, R);
     case '<':
     case '>':
     case op_eq:
@@ -1156,13 +1414,13 @@ Value *BinaryExprAST::codegen() {
 
 Value *UnaryExprAST::codegen() {
     Value *OperandV = Operand->codegen();
+    DataType DT = Operand->getDatatype();
     if (!OperandV)
         return nullptr;
 
     switch(Opcode) {
     case '-':
-        return Builder->CreateFNeg(OperandV, "negtmp");
-        break;
+        return BinOps::Neg(DT, OperandV);
     case '!':
         OperandV = Builder->CreateFCmpONE(
                        OperandV, ConstantFP::get(*TheContext, APFloat(0.0)), "loopcond");
@@ -1437,7 +1695,7 @@ Value *VarExprAST::codegen() {
         ExprAST *Init = VarNames[i].second.get();
 
         /// Emit the initializer before adding the variable to scope, this prevents
-        /// the initializer from refrenceing the variable itself, and permits stuff
+        /// the initializer from referencing the variable itself, and permits stuff
         /// like this:
         /// var a = 1 in
         /// var a = a in... # refers to outer 'a'.
@@ -1548,31 +1806,91 @@ Function *FunctionAST::codegen() { // Might have an error, details are in the tu
 static void InitializeBinopPrecedence() {
     // Install standard binary operators.
     // 1 is lowest precedence.
-    BinopProperties['='] = {2, true,true, type_UNDECIDED}; // Assignment
-    BinopProperties['|'] = {5, false,true, type_bool}; // Xor
-    BinopProperties[optok("||")] = {5, false,true, type_bool}; // Or
-    BinopProperties['&'] = {5, false, true, type_bool}; // And
-    BinopProperties['>'] = {10, true, false, type_bool}; // Greater Than
-    BinopProperties['<'] = {10, true, false, type_bool}; // Less Than
-    BinopProperties[optok("==")] = {10, true, true, type_bool}; // Equal
-    BinopProperties[optok("!=")] = {10, true, true, type_bool}; // Not Equal
-    BinopProperties[optok(">=")] = {10, true, false, type_bool}; // Greater than or equal
-    BinopProperties[optok("<=")] = {10, true, false, type_bool}; // Less than or equal
-    BinopProperties['+'] = {20, true, false, type_double}; // Add
-    BinopProperties['-'] = {20, true, false, type_double}; // Subtract
-    BinopProperties['*'] = {40, true, false, type_double}; // Multiply
-    BinopProperties['/'] = {40, true, false, type_double}; // Divide
-    //BinopProperties['^'] = {50, true, false, type_bool}; // Exponent
-    //BinopProperties[optok("<<")] = 60; // Bitwise Shift
-    //BinopProperties[optok(">>")] = 60; // Bitwise Shift
+    BinopProperties['='] =
+        {10, std::map<std::pair<DataType, DataType>, DataType>()};
+    BinopProperties['|'] =
+        {20, std::map<std::pair<DataType, DataType>, DataType>()}; 
+    BinopProperties[optok("||")] = 
+        {20, std::map<std::pair<DataType, DataType>, DataType>()};
+    BinopProperties['&'] =
+        {30, std::map<std::pair<DataType, DataType>, DataType>()};
+    BinopProperties['>'] =
+        {40, std::map<std::pair<DataType, DataType>, DataType>()};
+    BinopProperties['<'] =
+        {40, std::map<std::pair<DataType, DataType>, DataType>()};
+    BinopProperties[optok("==")] = 
+        {40, std::map<std::pair<DataType, DataType>, DataType>()};
+    BinopProperties[optok("!=")] = 
+        {40, std::map<std::pair<DataType, DataType>, DataType>()};
+    BinopProperties[optok(">=")] =
+        {40, std::map<std::pair<DataType, DataType>, DataType>()};
+    BinopProperties[optok("<=")] =
+        {40, std::map<std::pair<DataType, DataType>, DataType>()};
+    BinopProperties['+'] =
+        {50, std::map<std::pair<DataType, DataType>, DataType>()};
+    BinopProperties['-'] =
+        {50, std::map<std::pair<DataType, DataType>, DataType>()};
+    BinopProperties['*'] =
+        {60, std::map<std::pair<DataType, DataType>, DataType>()};
+    BinopProperties['/'] =
+        {60, std::map<std::pair<DataType, DataType>, DataType>()};
+
+    for(int i = 0; i < std::size(BinOps::priorities); i++){
+        DataType Bigger = BinOps::priorities[i];
+        for (int j = i; j < std::size(BinOps::priorities); j++){
+            DataType Smaller = BinOps::priorities[j];
+            std::pair<DataType, DataType> pair1 = std::make_pair(Bigger, Smaller);
+            std::pair<DataType, DataType> pair2 = std::make_pair(Smaller, Bigger);
+            BinopProperties['='].CompatibilityChart[pair1] = Bigger;
+
+            if(!(Bigger == type_double || Bigger == type_float 
+                    || Smaller == type_double || Smaller == type_float)) {
+                // If not a floating point operator, install operators
+                BinopProperties['|'].CompatibilityChart[pair1] = Bigger;
+                BinopProperties['|'].CompatibilityChart[pair2] = Bigger;
+                BinopProperties[optok("||")].CompatibilityChart[pair1] = Bigger;
+                BinopProperties[optok("||")].CompatibilityChart[pair2] = Bigger;
+                BinopProperties['&'].CompatibilityChart[pair1] = Bigger;
+                BinopProperties['&'].CompatibilityChart[pair2] = Bigger;
+            } else {
+                // Otherwise, skip all operations that will result in data loss.
+                if (Smaller == type_double && j < i)
+                    continue;
+                else if (Smaller == type_float && j < i && Bigger != type_double)
+                    continue;
+            }
+
+            BinopProperties[optok("==")].CompatibilityChart[pair1] = type_bool;
+            BinopProperties[optok("==")].CompatibilityChart[pair2] = type_bool;
+            BinopProperties[optok("!=")].CompatibilityChart[pair1] = type_bool;
+            BinopProperties[optok("!=")].CompatibilityChart[pair2] = type_bool;
+            BinopProperties['+'].CompatibilityChart[pair1] = Bigger;
+            BinopProperties['+'].CompatibilityChart[pair2] = Bigger;
+            BinopProperties['-'].CompatibilityChart[pair1] = Bigger;
+            BinopProperties['-'].CompatibilityChart[pair2] = Bigger;
+            BinopProperties['*'].CompatibilityChart[pair1] = Bigger;
+            BinopProperties['*'].CompatibilityChart[pair2] = Bigger;
+            BinopProperties['/'].CompatibilityChart[pair1] = Bigger;
+            BinopProperties['/'].CompatibilityChart[pair2] = Bigger;
+            // Do not check for bools.
+            if (i != std::size(BinOps::priorities)) {
+                BinopProperties['>'].CompatibilityChart[pair1] = type_bool;
+                BinopProperties['>'].CompatibilityChart[pair2] = type_bool;
+                BinopProperties['<'].CompatibilityChart[pair1] = type_bool;
+                BinopProperties['<'].CompatibilityChart[pair2] = type_bool;
+                BinopProperties[optok(">=")].CompatibilityChart[pair1] = type_bool;
+                BinopProperties[optok(">=")].CompatibilityChart[pair2] = type_bool;
+                BinopProperties[optok("<=")].CompatibilityChart[pair1] = type_bool;
+                BinopProperties[optok("<=")].CompatibilityChart[pair2] = type_bool;
+            }
+        }
+    }
 
     longops.push_back(optok("||"));
     longops.push_back(optok("=="));
     longops.push_back(optok("!="));
     longops.push_back(optok(">="));
     longops.push_back(optok("<="));
-    //longops.push_back(optok("<<"));
-    //longops.push_back(optok(">>"));
 }
 
 static void InitializeModuleAndManagers() {

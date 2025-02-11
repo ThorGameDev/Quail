@@ -843,12 +843,18 @@ void HandleTopLevelExpression() {
             // Get the symbol's address and cast it into the right type (takes no
             // arguments, returns a double) so we can call it as a native function.
             
+            std::cout << "Data type" << dtype << std::endl;
             if (dtype == type_double){
                 double (*Function)() = ExprSymbol.getAddress().toPtr<double (*)()>();
                 fprintf(stderr, "Evaluated to %f\n", Function());
             } else if (dtype == type_bool){
                 bool (*Function)() = ExprSymbol.getAddress().toPtr<bool (*)()>();
-                fprintf(stderr, "Evaluated to %i\n", Function());
+                if (Function()){
+                    fprintf(stderr, "Evaluated to True\n");
+                }
+                else{
+                    fprintf(stderr, "Evaluated to False\n");
+                }
             } else if (dtype == type_float){
                 float (*Function)() = ExprSymbol.getAddress().toPtr<float (*)()>();
                 fprintf(stderr, "Evaluated to %f\n", Function());

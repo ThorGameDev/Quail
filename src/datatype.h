@@ -7,9 +7,9 @@ enum DataType {
     type_i8 = 1,
     type_i16 = 2,
     type_i32 = 3,
-    type_i64 = 3,
-    type_float = 4,
-    type_double = 5,
+    type_i64 = 4,
+    type_float = 5,
+    type_double = 6,
 };
 
 #endif

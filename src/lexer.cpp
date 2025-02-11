@@ -1,7 +1,9 @@
 #include "./lexer.h"
 #include "./BinopsData.h"
+#include "datatype.h"
 #include <cassert>
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -107,7 +109,7 @@ int gettok() {
 
 
         NumVal = strtod(NumStr.c_str(), 0);
-        INumVal = strtol(INumStr.c_str(), 0, 10);
+        INumVal = strtoll(INumStr.c_str(), 0, 10);
         if (LastChar == ':'){
             LastChar = getchar();
             std::string ExplicitType;
@@ -116,8 +118,6 @@ int gettok() {
                 LastChar = getchar();
             } 
             while(isdigit(LastChar) || LastChar == 'i' || LastChar == 'f' || LastChar == 'd');
-            if (ExplicitType == "i64")
-                TokenDataType = type_i64;
             if (ExplicitType == "i64")
                 TokenDataType = type_i64;
             if (ExplicitType == "i32")
@@ -132,10 +132,25 @@ int gettok() {
                 TokenDataType = type_float;
         }
         else {
-            if (NumVal != INumVal)
-                TokenDataType = type_i32;
-            else
-                TokenDataType = type_double;
+            if (isInt){
+                if ((int8_t)INumVal == INumVal){
+                    TokenDataType = type_i8; 
+                } else if ((int16_t)INumVal == INumVal) {
+                    TokenDataType = type_i16; 
+                } else if ((int32_t)INumVal == INumVal) {
+                    TokenDataType = type_i32; 
+                } else {
+                    TokenDataType = type_i64; 
+                }
+            }
+            else {
+                if ((float)NumVal == NumVal){
+                    TokenDataType = type_float;
+                } else {
+                    TokenDataType = type_double;
+                }
+                
+            }
         }
         return tok_number;
     }

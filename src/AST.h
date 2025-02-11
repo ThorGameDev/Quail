@@ -4,7 +4,6 @@
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Value.h>
 #include <cstdint>
-#include <llvm/TargetParser/Triple.h>
 #include <string>
 #include <vector>
 

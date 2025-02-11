@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <iostream>
 #include <iterator>
 #include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/Constant.h>
@@ -827,6 +828,7 @@ void HandleExtern() {
 void HandleTopLevelExpression() {
     // Evaluate a top-level expression into an anonymous function.
     if (auto FnAST = ParseTopLevelExpr()) {
+        DataType dtype = FnAST->getDataType();
         if (FnAST->codegen()) {
             // Create a Resource Tracker to track JIT'd memory allocated to our
             // anonymous expression -- that way we can free it after executing.
@@ -841,26 +843,25 @@ void HandleTopLevelExpression() {
             // Get the symbol's address and cast it into the right type (takes no
             // arguments, returns a double) so we can call it as a native function.
             
-            DataType returnFormatType = type_double;
-            if (returnFormatType == type_double){
+            if (dtype == type_double){
                 double (*Function)() = ExprSymbol.getAddress().toPtr<double (*)()>();
                 fprintf(stderr, "Evaluated to %f\n", Function());
-            } else if (returnFormatType == type_bool){
+            } else if (dtype == type_bool){
                 bool (*Function)() = ExprSymbol.getAddress().toPtr<bool (*)()>();
                 fprintf(stderr, "Evaluated to %i\n", Function());
-            } else if (returnFormatType == type_float){
+            } else if (dtype == type_float){
                 float (*Function)() = ExprSymbol.getAddress().toPtr<float (*)()>();
                 fprintf(stderr, "Evaluated to %f\n", Function());
-            } else if (returnFormatType == type_i8){
+            } else if (dtype == type_i8){
                 int8_t (*Function)() = ExprSymbol.getAddress().toPtr<int8_t (*)()>();
                 fprintf(stderr, "Evaluated to %i\n", Function());
-            } else if (returnFormatType == type_i16){
+            } else if (dtype == type_i16){
                 int16_t (*Function)() = ExprSymbol.getAddress().toPtr<int16_t (*)()>();
                 fprintf(stderr, "Evaluated to %i\n", Function());
-            } else if (returnFormatType == type_i32){
+            } else if (dtype == type_i32){
                 int32_t (*Function)() = ExprSymbol.getAddress().toPtr<int32_t (*)()>();
                 fprintf(stderr, "Evaluated to %i\n", Function());
-            } else if (returnFormatType == type_i64){
+            } else if (dtype == type_i64){
                 int64_t (*Function)() = ExprSymbol.getAddress().toPtr<int64_t (*)()>();
                 fprintf(stderr, "Evaluated to %ld\n", Function());
             }

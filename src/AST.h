@@ -4,6 +4,7 @@
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Value.h>
 #include <cstdint>
+#include <llvm/TargetParser/Triple.h>
 #include <string>
 #include <vector>
 
@@ -230,6 +231,10 @@ public:
     unsigned getBinaryPrecedence() const {
         return Precedence;
     }
+
+    DataType getDataType() const {
+        return ReturnType;
+    }
 };
 
 // FunctionAST - This class represents a function definition itself
@@ -242,5 +247,9 @@ public:
                 std::unique_ptr<ExprAST> Body)
         : Proto(std::move(Proto)), Body(std::move(Body)) {}
     llvm::Function *codegen();
+
+    DataType getDataType() const {
+        return Proto->getDataType();
+    }
 };
 #endif

@@ -22,7 +22,7 @@ FLAGS = $(CXXFLAGS) $(LLVM_FLAGS)
 LIBS = $(LLVM_LDFLAGS) $(LLVM_SYSTEM_LIBS) $(LLVM_LIBS)
 
 # Define the target executable
-TARGET = run
+TARGET = Quailpiler
 
 # Default rule
 all: $(TARGET)

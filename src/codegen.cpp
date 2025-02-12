@@ -166,6 +166,10 @@ bool isSigned(DataType dtype){
     if (dtype == type_bool) { return false; }
     else { return true; }
 }
+bool isFP(DataType dtype){
+    if (dtype == type_double || dtype == type_float) { return true; }
+    else { return false; }
+}
 
 Value* expandDataType(Value* input, DataType target, DataType prior){
     if (prior == target){
@@ -185,10 +189,20 @@ Value* expandDataType(Value* input, DataType target, DataType prior){
         }
     }
     else if (target == type_float) {
-        return Builder->CreateSIToFP(input, getType(target));
+        if (isSigned(prior)){
+            return Builder->CreateSIToFP(input, getType(target));
+        }
+        else {
+            return Builder->CreateUIToFP(input, getType(target));
+        }
     }
     else {
-        return Builder->CreateSExt(input, getType(target));
+        if (isSigned(prior)){
+            return Builder->CreateSExt(input, getType(target));
+        }
+        else{
+            return Builder->CreateZExt(input, getType(target));
+        }
     }
 };
 
@@ -223,19 +237,48 @@ Value* LogicGate(DataType LHS, DataType RHS, Value* L, Value* R, int gate) {
 
 Value* EqualityCheck(DataType LHS, DataType RHS, Value* L, Value* R, int Op) {
     std::pair<Value*, Value*> parts = expandOperation(LHS, RHS, L, R);
-
-    if (Op == '<')
-        return Builder->CreateFCmpULT(parts.first, parts.second, "tlttmp");
-    else if (Op == '>')
-        return Builder->CreateFCmpUGT(parts.first, parts.second, "tgttmp");
-    else if (Op == op_eq)
-        return Builder->CreateFCmpUEQ(parts.first, parts.second, "teqtmp");
-    else if (Op == op_geq)
-        return Builder->CreateFCmpUGE(parts.first, parts.second, "tgetmp");
-    else if (Op == op_leq)
-        return Builder->CreateFCmpULE(parts.first, parts.second, "tletmp");
-    else if (Op == op_neq)
-        return Builder->CreateFCmpUNE(parts.first, parts.second, "tnetmp");
+    if (isFP(LHS) || isFP(RHS)){
+        if (Op == '<')
+            return Builder->CreateFCmpULT(parts.first, parts.second, "tlttmp");
+        else if (Op == '>')
+            return Builder->CreateFCmpUGT(parts.first, parts.second, "tgttmp");
+        else if (Op == op_eq)
+            return Builder->CreateFCmpUEQ(parts.first, parts.second, "teqtmp");
+        else if (Op == op_geq)
+            return Builder->CreateFCmpUGE(parts.first, parts.second, "tgetmp");
+        else if (Op == op_leq)
+            return Builder->CreateFCmpULE(parts.first, parts.second, "tletmp");
+        else if (Op == op_neq)
+            return Builder->CreateFCmpUNE(parts.first, parts.second, "tnetmp");
+    }
+    else if (isSigned(LHS) || isSigned(RHS)){
+        if (Op == '<')
+            return Builder->CreateICmpSLT(parts.first, parts.second, "tlttmp");
+        else if (Op == '>')
+            return Builder->CreateICmpSGT(parts.first, parts.second, "tgttmp");
+        else if (Op == op_eq)
+            return Builder->CreateICmpEQ(parts.first, parts.second, "teqtmp");
+        else if (Op == op_geq)
+            return Builder->CreateICmpSGE(parts.first, parts.second, "tgetmp");
+        else if (Op == op_leq)
+            return Builder->CreateICmpSLE(parts.first, parts.second, "tletmp");
+        else if (Op == op_neq)
+            return Builder->CreateICmpNE(parts.first, parts.second, "tnetmp");
+    }
+    else {
+        if (Op == '<')
+            return Builder->CreateICmpULT(parts.first, parts.second, "tlttmp");
+        else if (Op == '>')
+            return Builder->CreateICmpUGT(parts.first, parts.second, "tgttmp");
+        else if (Op == op_eq)
+            return Builder->CreateICmpEQ(parts.first, parts.second, "teqtmp");
+        else if (Op == op_geq)
+            return Builder->CreateICmpUGE(parts.first, parts.second, "tgetmp");
+        else if (Op == op_leq)
+            return Builder->CreateICmpULE(parts.first, parts.second, "tletmp");
+        else if (Op == op_neq)
+            return Builder->CreateICmpNE(parts.first, parts.second, "tnetmp");
+    }
 
 
     return LogCompilerBug("Attempted to compare equality with '" + tokop(Op) + "' operator.");

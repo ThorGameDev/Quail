@@ -5,7 +5,7 @@
 #include "./AST.h"
 #include "./parser.h"
 #include "./logging.h"
-#include "../include/KaleidoscopeJIT.h"
+#include "../include/QuailJIT.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
@@ -53,7 +53,7 @@ static std::unique_ptr<LLVMContext> TheContext;
 static std::unique_ptr<IRBuilder<>> Builder;
 static std::unique_ptr<Module> TheModule;
 static std::map<std::string, AllocaInst*> NamedValues;
-static std::unique_ptr<KaleidoscopeJIT> TheJIT;
+static std::unique_ptr<QuailJIT> TheJIT;
 static std::unique_ptr<FunctionPassManager> TheFPM;
 static std::unique_ptr<LoopAnalysisManager> TheLAM;
 static std::unique_ptr<FunctionAnalysisManager> TheFAM;
@@ -753,13 +753,13 @@ void InitializeCodegen(){
     InitializeNativeTargetAsmPrinter();
     InitializeNativeTargetAsmParser();
 
-    TheJIT = ExitOnErr(KaleidoscopeJIT::Create());
+    TheJIT = ExitOnErr(QuailJIT::Create());
 }
 
 void InitializeModuleAndManagers() {
     //Open a new context and module
     TheContext = std::make_unique<LLVMContext>();
-    TheModule = std::make_unique<Module>("KaleidoscopeJIT", *TheContext);
+    TheModule = std::make_unique<Module>("QuailJIT", *TheContext);
     TheModule->setDataLayout(TheJIT->getDataLayout());
 
     //Create a builder for the module

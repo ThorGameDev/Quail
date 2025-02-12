@@ -1,6 +1,6 @@
 extern double putchard(i8 char);_
 
-def double printdensity(i16 d)
+def float printdensity(i16 d)
 {
 	if (d > 8)
 	{
@@ -20,18 +20,9 @@ def double printdensity(i16 d)
 	};
 };_
 
-{
-	printdensity(1:i16);
-	printdensity(2:i16);
-	printdensity(3:i16); 
-	printdensity(4:i16);
-	printdensity(5:i16); 
-	printdensity(9:i16); 
-};_
-
 # Determine whether the specific location diverges.
 # Solve for z = z^2 + c in the complex plane.
-def i16 mandelconverger(double real, double imag, i16 iters, double creal, double cimag)
+def i16 mandelconverger(float real, float imag, i16 iters, float creal, float cimag)
 {
 	if (iters > 255 | (real*real + imag*imag > 4))
 	{
@@ -44,18 +35,17 @@ def i16 mandelconverger(double real, double imag, i16 iters, double creal, doubl
 			iters+1, creal, cimag)
 	}
 }_
-
 # Return the number of iterations required for the iteration to escape
-def i16 mandelconverge(double real, double imag)
+def i16 mandelconverge(float real, float imag)
     mandelconverger(real, imag, 0:i16, real, imag)_
 
 # Compute and plot the mandelbrot set with the specified 2 dimensional range
 # info.
-def double mandelhelp(double xmin, double xmax, double xstep, double ymin, double ymax, double ystep) 
+def float mandelhelp(float xmin, float xmax, float xstep, float ymin, float ymax, float ystep) 
 {
-	for (y = ymin; y < ymax; ystep )
+	for (float y = ymin; y < ymax; y = y + ystep )
 	{
-		for (x=xmin; x < xmax; xstep) 
+		for (float x = xmin; x < xmax; x =x + xstep) 
 		{
 			printdensity(mandelconverge(x,y));
 		};
@@ -65,12 +55,12 @@ def double mandelhelp(double xmin, double xmax, double xstep, double ymin, doubl
 
 # mandel - This is a convenient helper function for plotting the mandelbrot set
 # from the specified position with the specified Magnification.
-def double mandel(double realstart, double imagstart, double realmag, double imagmag)
+def float mandel(float realstart, float imagstart, float realmag, float imagmag)
 {
 	mandelhelp(realstart, realstart+realmag*78, realmag,
 		imagstart, imagstart+imagmag*40, imagmag);
 };_
 
-mandel(-2.3, -1.3, 0.05, 0.07);_
-mandel(-2, -1, 0.02, 0.04);_
-mandel(-0.9, -1.4, 0.02, 0.03);_
+mandel(-2.3:f, -1.3:f, 0.05:f, 0.07:f);_
+mandel(-2.0:f, -1.0:f, 0.02:f, 0.04:f);_
+mandel(-0.9:f, -1.4:f, 0.02:f, 0.03:f);_

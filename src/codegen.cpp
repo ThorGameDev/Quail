@@ -599,7 +599,7 @@ Value *ForExprAST::codegen() {
     Function *TheFunction = Builder->GetInsertBlock()->getParent();
 
     //Create an alloca for the variable in the entry block.
-    AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName, Type::getDoubleTy(*TheContext));
+    AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName, getType(VarType));
 
     // Emit the start code first, without 'variable' in scope.
     Value *StartVal = Start->codegen();
@@ -609,13 +609,11 @@ Value *ForExprAST::codegen() {
     //Store the value into the alloca.
     Builder->CreateStore(StartVal, Alloca);
 
+    BasicBlock *Preloop = Builder->GetInsertBlock();
+
     // Make the new basic block for the loop header, inserting after current block
     BasicBlock *LoopBB =
         BasicBlock::Create(*TheContext, "loop", TheFunction);
-
-
-    // Insert an explicit fall through from the current block to the LoopBB.
-    Builder->CreateBr(LoopBB);
 
     // Start insertion in LoopBB.
     Builder->SetInsertPoint(LoopBB);
@@ -632,29 +630,20 @@ Value *ForExprAST::codegen() {
     if (!BodyV)
         return nullptr;
 
-
     // Emit the step value.
-    Value *StepVal = nullptr;
-    if (Step) {
-        StepVal = Step->codegen();
-        if(!StepVal)
-            return nullptr;
-    } else {
-        // If not specified, use 1.0
-        StepVal = ConstantFP::get(*TheContext, APFloat(1.0));
-    }
+    Value *StepVal = Step->codegen();
+    if (!StepVal)
+        return nullptr;
+
+    BasicBlock *CondBB =
+        BasicBlock::Create(*TheContext, "conditionblock", TheFunction);
+    Builder->CreateBr(CondBB);
+    Builder->SetInsertPoint(CondBB);
 
     // Compute the end condition
     Value *EndCond = End->codegen();
     if (!EndCond)
         return nullptr;
-
-    // Reload, increment, and restore the alloca. This handles the case where
-    // the body of the loop mutates the variable
-    Value *CurVar =
-        Builder->CreateLoad(Alloca->getAllocatedType(), Alloca, VarName.c_str());
-    Value *NextVar = Builder->CreateFAdd(CurVar, StepVal, "nextvar");
-    Builder->CreateStore(NextVar, Alloca);
 
     // Create the "after loop" block and insert it.
     BasicBlock *AfterBB =
@@ -662,6 +651,10 @@ Value *ForExprAST::codegen() {
 
     // Insert the conditional branch into the end of LoopEndBB.
     Builder->CreateCondBr(EndCond, LoopBB, AfterBB);
+
+    // Allow acces into the loop, but make sure to enter the check branch.
+    Builder->SetInsertPoint(Preloop);
+    Builder->CreateBr(CondBB);
 
     // Any new code will be inserted in AfterBB.
     Builder->SetInsertPoint(AfterBB);

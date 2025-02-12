@@ -87,7 +87,10 @@ struct ParserBlockStackData {
 };
 static std::stack<ParserBlockStackData*> ParseBlockStack;
 static std::unique_ptr<ExprAST> ParseBlock() {
+    if (CurTok != '{')
+        return LogErrorParse("expected '{'. Got '" + tokop(CurTok) + "'");
     getNextToken(); // Eat {
+
     std::vector<std::unique_ptr<LineAST>> lines;
     ParserBlockStackData data = ParserBlockStackData();
     ParseBlockStack.push(&data);
@@ -145,8 +148,8 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
             if (auto Arg = ParseExpression()){
                 if (Arg->getDatatype() != argDtypes[i]){
                     return LogErrorParse("Function '" + IdName + "' contains a type mismatch.\n" + 
-                            "Argument #" + std::to_string(i) + " requires type '" + dtypeToString(Arg->getDatatype()) + "'. " +
-                            "Got '" + dtypeToString(argDtypes[i]) + "' instead");
+                            "Argument #" + std::to_string(i) + " requires type '" + dtypeToString(argDtypes[i]) + "'. " +
+                            "Got '" + dtypeToString(Arg->getDatatype()) + "' instead");
                 }
                 Args.push_back(std::move(Arg));
             }
@@ -229,11 +232,24 @@ static std::unique_ptr<ExprAST> ParseForExpr() {
         return LogErrorParse("expected '('. Got '" + tokop(CurTok) + "'");
     getNextToken(); // Eat the '('
 
+    DataType indexDtype = type_UNDECIDED;
+    if (CurTok == tok_dtype)
+        indexDtype = TokenDataType;
+    else
+        return LogErrorParse("Expected datatype token. Instead got '" + tokop(CurTok) + "'");
+    getNextToken(); // Eat the DataType
+
     if (CurTok != tok_identifier)
         return LogErrorParse("expected identifier after for. Got '" + tokop(CurTok) + "'");
 
     std::string IdName = IdentifierStr;
     getNextToken(); //eat identifier.
+
+    DataType outerDtype = type_UNDECIDED;
+    if (NamedValuesDatatype.count(IdName) != 0){
+        outerDtype = NamedValuesDatatype[IdName];
+    }
+    NamedValuesDatatype[IdName] = indexDtype;
 
     if (CurTok != '=')
         return LogErrorParse("expected '='. Got '" + tokop(CurTok) + "'");
@@ -249,19 +265,24 @@ static std::unique_ptr<ExprAST> ParseForExpr() {
     auto End = ParseExpression();
     if (!End)
         return nullptr;
-
-    // The step value is optional.
-    std::unique_ptr<ExprAST> Step;
-    if (CurTok == ';') {
-        getNextToken();
-        Step = ParseExpression();
-        if (!Step)
-            return nullptr;
+    if (End->getDatatype() != type_bool){
+        return LogErrorParse("For loop condition should be 'bool' rather than '" + dtypeToString(End->getDatatype()) + "'");
     }
+
+    std::unique_ptr<ExprAST> Step;
+    if (CurTok != ';') {
+        return LogErrorParse("expected ';'. Got '" + tokop(CurTok) + "'");
+    }
+    getNextToken(); // Eat ;
+
+    Step = ParseExpression();
+    if (!Step)
+        return nullptr;
 
     if (CurTok != ')')
         return LogErrorParse("expected ')'. Got '" + tokop(CurTok) + "'");
     getNextToken(); // Eat the ')'
+
 
     std::unique_ptr<ExprAST> Body = ParseExpression();
     if (!Body)
@@ -273,8 +294,14 @@ static std::unique_ptr<ExprAST> ParseForExpr() {
         return LogErrorParse("expected ';'. Got '" + tokop(CurTok) + "'\n" + 
                 "for loop statement must end with a ';', because return types are impossible.");
 
-    return std::make_unique<ForExprAST>(IdName, std::move(Start),
-                                        std::move(End), std::move(Step),std::move(Body));
+    // Restore old bindings to 'i' variable.
+    if (outerDtype != type_UNDECIDED)
+        NamedValuesDatatype[IdName] = outerDtype;
+    else
+        NamedValuesDatatype.erase(IdName);
+
+    return std::make_unique<ForExprAST>(IdName, indexDtype, std::move(Start),
+                        std::move(End), std::move(Step),std::move(Body));
 }
 
 /// varexpr :: 'var' identifier ('=' expression)?
@@ -288,7 +315,7 @@ static std::unique_ptr<ExprAST> ParseVarExpr() {
     if (CurTok == tok_dtype)
         dtype = TokenDataType;
     else
-        return LogErrorParse("Invalid datatype '"+ std::to_string((int32_t)dtype) +"' passed to 'ParseVarExpr()'");
+        return LogErrorParse("Expected datatype token. Instead got '" + tokop(CurTok) + "'");
     getNextToken(); // eat the var.
 
     std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;

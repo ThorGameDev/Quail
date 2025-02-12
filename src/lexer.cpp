@@ -22,6 +22,36 @@ int optok(std::string op) {
 }
 
 std::string tokop(int op) {
+    if (op <= 0){
+        switch (op) {
+            case tok_def:
+                return "tok_def";
+            case tok_extern:
+                return "tok_extern";
+            case tok_identifier:
+                return "tok_identifier";
+            case tok_number:
+                return "tok_number";
+            case tok_true:
+                return "tok_true";
+            case tok_false:
+                return "tok_false";
+            case tok_if:
+                return "tok_if";
+            case tok_else:
+                return "tok_else";
+            case tok_for:
+                return "tok_for";
+            case tok_binary:
+                return "tok_binary";
+            case tok_unary:
+                return "tok_unary";
+            case tok_dtype:
+                return "tok_dtype";
+            default:
+                return std::to_string(op);
+        }
+    }
     std::string ret;
     ret += (char)(op);
     char second = op >> 8;

@@ -1,16 +1,18 @@
 #include "./logging.h"
+#include <iostream>
+#include <string>
 
 /// LogError* - These are little helper funcions for error handling.
-std::unique_ptr<ExprAST> LogError(const char *Str) {
-    fprintf(stderr, "Error: %s\n", Str);
+std::unique_ptr<ExprAST> LogError(std::string Str) {
+    std::cout << "Error: " << Str << "\n";
     return nullptr;
 }
-std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+std::unique_ptr<PrototypeAST> LogErrorP(std::string Str) {
     LogError(Str);
     return nullptr;
 }
 
-llvm::Value *LogErrorV(const char *Str) {
+llvm::Value *LogErrorV(std::string Str) {
     LogError(Str);
     return nullptr;
 }

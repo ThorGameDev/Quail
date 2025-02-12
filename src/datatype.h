@@ -1,6 +1,7 @@
 #ifndef DATATYPE
 #define DATATYPE
 
+#include <string>
 enum DataType {
     type_UNDECIDED = 999,
     type_bool = 0,
@@ -11,5 +12,7 @@ enum DataType {
     type_float = 5,
     type_double = 6,
 };
+
+std::string dtypeToString(DataType dtype);
 
 #endif

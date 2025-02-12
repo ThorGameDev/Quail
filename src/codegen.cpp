@@ -91,7 +91,7 @@ Type *getType(DataType dtype){
     if (dtype == type_double){
         return Type::getDoubleTy(*TheContext);
     }
-    if (dtype == type_float){
+    else if (dtype == type_float){
         return Type::getFloatTy(*TheContext);
     }
     else if (dtype == type_bool){
@@ -109,7 +109,7 @@ Type *getType(DataType dtype){
     else if (dtype == type_i64){
         return Type::getInt64Ty(*TheContext);
     }
-    LogError("No type exists!");
+    LogErrorCompile("Failed to get LLVM type from type '" + dtypeToString(dtype) + "'");
     abort();
     return nullptr;
 }
@@ -147,7 +147,8 @@ Value *VariableExprAST::codegen() {
     // Look this variable up in the funcion
     AllocaInst *A = NamedValues[Name];
     if (!A)
-        LogErrorV("Unknown variable name");
+        LogErrorCompileV("Unknown variable name '" + Name + "'.\n" + 
+                "Name did not exist in NamedValues table");
 
     return Builder->CreateLoad(A->getAllocatedType(), A, Name.c_str());
 }
@@ -217,7 +218,7 @@ Value* LogicGate(DataType LHS, DataType RHS, Value* L, Value* R, int gate) {
     else if (gate == 2)
         return Builder->CreateAnd(parts.first, parts.second, "andtmp");
 
-    return LogErrorV("In issue has occured wiht the logic gate.");
+    return LogCompilerBug("Attempted to build non-existant logic gate with ID #" + std::to_string(gate));
 };
 
 Value* EqualityCheck(DataType LHS, DataType RHS, Value* L, Value* R, int Op) {
@@ -237,7 +238,7 @@ Value* EqualityCheck(DataType LHS, DataType RHS, Value* L, Value* R, int Op) {
         return Builder->CreateFCmpUNE(parts.first, parts.second, "tnetmp");
 
 
-    return LogErrorV("Equality check did not exist");
+    return LogCompilerBug("Attempted to compare equality with '" + tokop(Op) + "' operator.");
 };
 
 Value* Add(DataType LHS, DataType RHS, Value* L, Value* R){
@@ -303,7 +304,7 @@ Value *BinaryExprAST::codegen() {
         // dynamic_cast for automatic error checking.
         VariableExprAST *LHSE = static_cast<VariableExprAST *>(LHS.get());
         if (!LHSE)
-            return LogErrorV("destination of '=' must be a variable");
+            return LogErrorCompileV("destination of '=' must be a variable");
 
         //Codegen the RHS.
         Value *Val = RHS->codegen();
@@ -313,7 +314,7 @@ Value *BinaryExprAST::codegen() {
         // Look up the name.
         Value *Variable = NamedValues[LHSE->getName()];
         if (!Variable)
-            return LogErrorV("Unknown variable name");
+            return LogErrorCompileV("Assignment to unknown variable '" + LHSE->getName() + "'");
 
         Builder->CreateStore(Val, Variable);
         return Val;
@@ -379,7 +380,7 @@ Value *UnaryExprAST::codegen() {
 
     Function *F = getFunction(std::string("unary") + tokop(Opcode));
     if (!F)
-        return LogErrorV("Unknown unary operator");
+        return LogErrorCompileV("Unknown unary operator '" + tokop(Opcode) + "'");
 
     return Builder->CreateCall(F, OperandV, "unop");
 }
@@ -388,11 +389,12 @@ Value *CallExprAST::codegen() {
     //Look up the name in the global module table.
     Function *CalleeF = getFunction(Callee);
     if (!CalleeF)
-        return LogErrorV("Unknown function refrenced");
+        return LogErrorCompileV("Unknown function refrenced");
 
     // If argument mismatch error.
     if (CalleeF->arg_size() != Args.size())
-        return LogErrorV("Incorrect # arguments passed. CRITICAL");
+        return LogCompilerBug("Expected " + std::to_string(CalleeF->arg_size()) + "arguments, but got " +
+                std::to_string(Args.size()) + "instead.");
 
     std::vector<Value *> ArgsV;
     for (unsigned i = 0, e = Args.size(); i != e; i++) {
@@ -487,7 +489,7 @@ Value *LineAST::codegen() {
 // USES TEMPORARY DTYPE
 Value *IfExprAST::codegen() {
     if (Cond->getDatatype() != type_bool) {
-        return LogErrorV("If condition should be a boolean value!");
+        return LogErrorCompileV("If condition should be a boolean value! Got '" + dtypeToString(Cond->getDatatype()) + "' instead.");
     }
 
     Value *CondV = Cond->codegen();
@@ -548,7 +550,7 @@ Value *IfExprAST::codegen() {
 // USES TEMPORARY DTYPE
 Value *ForExprAST::codegen() {
     if (End->getDatatype() != type_bool) {
-        return LogErrorV("For loop condition should be bool type");
+        return LogErrorCompileV("For loop condition should be bool type. Got '" + dtypeToString(End->getDatatype()) + "' instead");
     }
 
     Function *TheFunction = Builder->GetInsertBlock()->getParent();

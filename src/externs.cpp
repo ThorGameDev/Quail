@@ -8,7 +8,7 @@
 #endif
 
 /// putchard - putchar that takes a double and returns 0.
-extern "C" DLLEXPORT double putchard(double X) {
+extern "C" DLLEXPORT double putchard(int8_t X) {
     fputc((char)X, stderr);
     return 0;
 }

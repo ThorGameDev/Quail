@@ -1,5 +1,6 @@
 #include "./BinopsData.h"
 #include "./lexer.h"
+#include "datatype.h"
 
 std::vector<int> longops;
 std::map<int, BinopProperty> BinopProperties;
@@ -38,9 +39,9 @@ void InitializeBinopPrecedence() {
     BinopProperties['/'] =
         {60, std::map<std::pair<DataType, DataType>, DataType>()};
 
-    for(int i = 0; i < numPriorities; i++){
+    for(int i = 0; i <= numPriorities; i++){
         DataType Bigger = priorities[i];
-        for (int j = i; j < numPriorities; j++){
+        for (int j = i; j <= numPriorities; j++){
             DataType Smaller = priorities[j];
             std::pair<DataType, DataType> pair1 = std::make_pair(Bigger, Smaller);
             std::pair<DataType, DataType> pair2 = std::make_pair(Smaller, Bigger);
@@ -88,6 +89,7 @@ void InitializeBinopPrecedence() {
             }
         }
     }
+    std::pair<DataType, DataType> boolop = std::make_pair(type_bool, type_bool);
 
     longops.push_back(optok("||"));
     longops.push_back(optok("=="));

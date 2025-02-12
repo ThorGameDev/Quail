@@ -58,7 +58,7 @@ static std::unique_ptr<ExprAST> ParseNumberExpr() {
         return Result;
     }
 
-    return LogError("Invalid datatype: " + std::to_string(TokenDataType));
+    return LogErrorParse("Invalid datatype: " + std::to_string(TokenDataType));
 }
 
 static std::unique_ptr<ExprAST> ParseBoolExpr() {
@@ -74,7 +74,7 @@ static std::unique_ptr<ExprAST> ParseParenExpr() {
     if (!V)
         return nullptr;
     if (CurTok != ')')
-        return LogError("expected ')'. Got '" + tokop(CurTok) + "'");
+        return LogErrorParse("expected ')'. Got '" + tokop(CurTok) + "'");
     getNextToken(); //eat ).
     return V;
 }
@@ -97,7 +97,7 @@ static std::unique_ptr<ExprAST> ParseBlock() {
             if (data.blockDtype == type_UNDECIDED)
                 data.blockDtype = line->getDatatype();
             else if (data.blockDtype != line->getDatatype())
-                return LogError("Block can not have multiple return types. " +
+                return LogErrorParse("Block can not have multiple return types. " +
                         dtypeToString(data.blockDtype) + " and " + 
                         dtypeToString(line->getDatatype()) + " are both returned");
         }
@@ -126,7 +126,7 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
     getNextToken(); // eat identifier.
     if (CurTok != '('){ // Simple variable ref.
         if (NamedValuesDatatype.count(IdName) == 0){
-            return LogError("Variable '" + IdName + "' does not exist!");
+            return LogErrorParse("Variable '" + IdName + "' does not exist!");
         }
         return std::make_unique<VariableExprAST>(IdName, NamedValuesDatatype[IdName]);
     }
@@ -135,7 +135,7 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
     getNextToken(); //eat (
 
     if (FunctionDataTypes.count(IdName) == 0){
-        return LogError("Function '" + IdName + "' does not exist!");
+        return LogErrorParse("Function '" + IdName + "' does not exist!");
     }
     std::vector<DataType> argDtypes = FunctionDataTypes[IdName].second;
 
@@ -144,8 +144,8 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
         for (int i = 0; i <= argDtypes.size(); i++) {
             if (auto Arg = ParseExpression()){
                 if (Arg->getDatatype() != argDtypes[i]){
-                    return LogError("Function '" + IdName + "' contains a type mismatch.\n" + 
-                            "Argument #" + std::to_string(i) + " is type '" + dtypeToString(Arg->getDatatype()) + "'. " +
+                    return LogErrorParse("Function '" + IdName + "' contains a type mismatch.\n" + 
+                            "Argument #" + std::to_string(i) + " requires type '" + dtypeToString(Arg->getDatatype()) + "'. " +
                             "Got '" + dtypeToString(argDtypes[i]) + "' instead");
                 }
                 Args.push_back(std::move(Arg));
@@ -158,14 +158,14 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
                 break;
 
             if (CurTok != ',')
-                return LogError("Expecetd ')' or ',' in argument list. Got '" + tokop(CurTok) + "'");
+                return LogErrorParse("Expecetd ')' or ',' in argument list. Got '" + tokop(CurTok) + "'");
             getNextToken();
         }
     }
 
     // Eat the ')'
     if (CurTok != ')'){ // Simple variable ref.
-        return LogError("expected ')'. Got '" + tokop(CurTok) + "'. \n" + 
+        return LogErrorParse("expected ')'. Got '" + tokop(CurTok) + "'. \n" + 
                     "Function '" + IdName + "' likely contains too many arguments.");
 
     }
@@ -178,7 +178,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
     getNextToken(); // eat the if.
 
     if (CurTok != '(')
-        return LogError("expected '('. Got '" + tokop(CurTok) + "'");
+        return LogErrorParse("expected '('. Got '" + tokop(CurTok) + "'");
     getNextToken(); // Eat the '('
 
     //condition.
@@ -187,7 +187,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
         return nullptr;
 
     if (CurTok != ')')
-        return LogError("expected ')'. Got '" + tokop(CurTok) + "'");
+        return LogErrorParse("expected ')'. Got '" + tokop(CurTok) + "'");
     getNextToken(); // Eat the ')'
 
     std::unique_ptr<LineAST> Then = ParseLine();
@@ -198,12 +198,12 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
         if (ParseBlockStack.top()->blockDtype == type_UNDECIDED)
             ParseBlockStack.top()->blockDtype = Then->getDatatype();
         else if (ParseBlockStack.top()->blockDtype != Then->getDatatype())
-            return LogError("If statement's return type '" + dtypeToString(Then->getDatatype()) + "' " + 
+            return LogErrorParse("If statement's return type '" + dtypeToString(Then->getDatatype()) + "' " + 
                     "differs from the current block return type of '" + dtypeToString(ParseBlockStack.top()->blockDtype) + "'");
     }
 
     if (CurTok != tok_else)
-        return LogError("Expected else");
+        return LogErrorParse("Expected else");
 
     getNextToken();
     std::unique_ptr<LineAST> Else = ParseLine();
@@ -214,7 +214,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
         if (ParseBlockStack.top()->blockDtype == type_UNDECIDED)
             ParseBlockStack.top()->blockDtype = Else->getDatatype();
         else if (ParseBlockStack.top()->blockDtype != Else->getDatatype())
-            return LogError("If statement's return type '" + dtypeToString(Else->getDatatype()) + "' " + 
+            return LogErrorParse("If statement's return type '" + dtypeToString(Else->getDatatype()) + "' " + 
                     "differs from the current block return type of '" + dtypeToString(ParseBlockStack.top()->blockDtype) + "'");
     }
 
@@ -226,24 +226,24 @@ static std::unique_ptr<ExprAST> ParseForExpr() {
     getNextToken(); // eat the for.
 
     if (CurTok != '(')
-        return LogError("expected '('. Got '" + tokop(CurTok) + "'");
+        return LogErrorParse("expected '('. Got '" + tokop(CurTok) + "'");
     getNextToken(); // Eat the '('
 
     if (CurTok != tok_identifier)
-        return LogError("expected identifier after for. Got '" + tokop(CurTok) + "'");
+        return LogErrorParse("expected identifier after for. Got '" + tokop(CurTok) + "'");
 
     std::string IdName = IdentifierStr;
     getNextToken(); //eat identifier.
 
     if (CurTok != '=')
-        return LogError("expected '='. Got '" + tokop(CurTok) + "'");
+        return LogErrorParse("expected '='. Got '" + tokop(CurTok) + "'");
     getNextToken(); // eat '='.
 
     auto Start = ParseExpression();
     if (!Start)
         return nullptr;
     if (CurTok != ';')
-        return LogError("expected ';'. Got '" + tokop(CurTok) + "'");
+        return LogErrorParse("expected ';'. Got '" + tokop(CurTok) + "'");
     getNextToken();
 
     auto End = ParseExpression();
@@ -260,7 +260,7 @@ static std::unique_ptr<ExprAST> ParseForExpr() {
     }
 
     if (CurTok != ')')
-        return LogError("expected ')'. Got '" + tokop(CurTok) + "'");
+        return LogErrorParse("expected ')'. Got '" + tokop(CurTok) + "'");
     getNextToken(); // Eat the ')'
 
     std::unique_ptr<ExprAST> Body = ParseExpression();
@@ -270,7 +270,7 @@ static std::unique_ptr<ExprAST> ParseForExpr() {
     if (CurTok == ';')
         getNextToken();
     else
-        return LogError("expected ';'. Got '" + tokop(CurTok) + "'\n" + 
+        return LogErrorParse("expected ';'. Got '" + tokop(CurTok) + "'\n" + 
                 "for loop statement must end with a ';', because return types are impossible.");
 
     return std::make_unique<ForExprAST>(IdName, std::move(Start),
@@ -281,21 +281,21 @@ static std::unique_ptr<ExprAST> ParseForExpr() {
 ///                 (',' identifier ('=' expression)?)* 'in' expression
 static std::unique_ptr<ExprAST> ParseVarExpr() {
     if (ParseBlockStack.size() == 0) {
-        return LogError("Variable must be contained in a block");
+        return LogErrorParse("Variable must be contained in a block");
     }
 
     DataType dtype = type_UNDECIDED;
     if (CurTok == tok_dtype)
         dtype = TokenDataType;
     else
-        return LogError("Invalid datatype '"+ std::to_string((int32_t)dtype) +"' passed to 'ParseVarExpr()'");
+        return LogErrorParse("Invalid datatype '"+ std::to_string((int32_t)dtype) +"' passed to 'ParseVarExpr()'");
     getNextToken(); // eat the var.
 
     std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
 
     // At least one variable name is required
     if (CurTok != tok_identifier)
-        return LogError("expected identifier after '" + dtypeToString(dtype) + "' declaration");
+        return LogErrorParse("expected identifier after '" + dtypeToString(dtype) + "' declaration");
 
     while (true) {
         std::string Name = IdentifierStr;
@@ -324,7 +324,7 @@ static std::unique_ptr<ExprAST> ParseVarExpr() {
         getNextToken(); // eat the ','.
 
         if (CurTok != tok_identifier)
-            return LogError("expected identifier list after '" + dtypeToString(dtype) + "' declaration due to ',' token.");
+            return LogErrorParse("expected identifier list after '" + dtypeToString(dtype) + "' declaration due to ',' token.");
     }
 
     // Check and consume In omitted
@@ -342,7 +342,7 @@ static std::unique_ptr<ExprAST> ParseVarExpr() {
 static std::unique_ptr<ExprAST> ParsePrimary() {
     switch(CurTok) {
     default:
-        return LogError("Unknown token '" + tokop(CurTok) + "' when expecting an expression");
+        return LogErrorParse("Unknown token '" + tokop(CurTok) + "' when expecting an expression");
     case tok_identifier:
         return ParseIdentifierExpr();
     case tok_number:
@@ -425,7 +425,7 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
         std::pair<DataType, DataType> OperationTyping = std::make_pair(LHS->getDatatype(), RHS->getDatatype());
 
         if(BinopProperties[BinOp].CompatibilityChart.count(OperationTyping) == 0) {
-            return LogError("Can not perform '" + tokop(BinOp) + "' operation between '" +
+            return LogErrorParse("Can not perform '" + tokop(BinOp) + "' operation between '" +
                     dtypeToString(LHS->getDatatype()) + "' and '" + 
                     dtypeToString(RHS->getDatatype()) + "'.");
         }
@@ -471,7 +471,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
     if(CurTok == tok_dtype)
         ReturnType = TokenDataType;
     else 
-        return LogErrorP("No type specified in prototype");
+        return LogErrorParseP("No type specified in prototype");
     getNextToken(); // Eat datatype
 
     unsigned Kind = 0; // 0 = identifier, 1 = unary, 2 = binary.
@@ -480,7 +480,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
     int OperatorName;
     switch (CurTok) {
     default:
-        return LogErrorP("Expected function name in '" + tokop(ReturnType) + "' type prototype");
+        return LogErrorParseP("Expected function name in '" + tokop(ReturnType) + "' type prototype");
     case tok_identifier:
         FnName = IdentifierStr;
         Kind = 0;
@@ -489,7 +489,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
     case tok_unary:
         getNextToken();
         if (CurTok < 0)
-            return LogErrorP("Expected unary operator. Got '" + tokop(CurTok) + "' instead");
+            return LogErrorParseP("Expected unary operator. Got '" + tokop(CurTok) + "' instead");
         FnName = "unary";
         FnSufix = (char)CurTok;
         Kind = 1;
@@ -506,7 +506,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
     case tok_binary:
         getNextToken();
         if (CurTok < 0)
-            return LogErrorP("Expected binary operator. Got '" + tokop(CurTok) + "' instead");
+            return LogErrorParseP("Expected binary operator. Got '" + tokop(CurTok) + "' instead");
         FnName = "binary";
         FnSufix = (char)CurTok;
         Kind = 2;
@@ -523,7 +523,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
         // Read the precedence if present.
         if (CurTok == tok_number) {
             if (INumVal < 1 || INumVal > 1000)
-                return LogErrorP("Invalid precedence '" + std::to_string(INumVal) + "': must be 1..1000");
+                return LogErrorParseP("Invalid precedence '" + std::to_string(INumVal) + "': must be 1..1000");
             BinaryPrecedence = (unsigned)INumVal;
             getNextToken();
         }
@@ -532,7 +532,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 
 
     if (CurTok != '(')
-        return LogErrorP("Expected '(' in prototype. Got '" + tokop(CurTok) + "'");
+        return LogErrorParseP("Expected '(' in prototype. Got '" + tokop(CurTok) + "'");
     getNextToken(); // Eat '('
 
     std::vector<std::pair<std::string, DataType>> Arguments;
@@ -546,7 +546,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
         getNextToken(); // Eat datatype
 
         if (CurTok != tok_identifier){
-            return LogErrorP("Expected name after variable datatype '"+dtypeToString(dtype)+"' declaration");
+            return LogErrorParseP("Expected name after variable datatype '"+dtypeToString(dtype)+"' declaration");
         }
         Arguments.push_back(std::make_pair(IdentifierStr, dtype));
         argsig.push_back(dtype);
@@ -558,17 +558,17 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
         getNextToken();
     }
     if (CurTok != ')')
-        return LogErrorP("Expected ')' in prototype. Got '" + tokop(CurTok) + "'");
+        return LogErrorParseP("Expected ')' in prototype. Got '" + tokop(CurTok) + "'");
 
     //success.
     getNextToken(); // eat ')'.
 
     // Verify right number of names for operator.
     if (Kind == 1 && Arguments.size() != 1){
-        return LogErrorP("Expected 1 argument for unary operator. Got '" + std::to_string(Arguments.size()) + "'");
+        return LogErrorParseP("Expected 1 argument for unary operator. Got '" + std::to_string(Arguments.size()) + "'");
     }
     else if (Kind == 2 && Arguments.size() != 2){
-        return LogErrorP("Expected 2 arguments for binary operator. Got '" + std::to_string(Arguments.size()) + "'");
+        return LogErrorParseP("Expected 2 arguments for binary operator. Got '" + std::to_string(Arguments.size()) + "'");
     }
 
     FunctionDataTypes[FnName] = std::make_pair(ReturnType, std::move(argsig));

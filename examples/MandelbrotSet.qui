@@ -1,6 +1,6 @@
-extern double putchard(double char);_
+extern double putchard(i8 char);_
 
-def double printdensity(double d)
+def double printdensity(i16 d)
 {
 	if (d > 8)
 	{
@@ -21,18 +21,17 @@ def double printdensity(double d)
 };_
 
 {
-	printdensity(1);
-	printdensity(2);
-	printdensity(3); 
-	printdensity(4);
-	printdensity(5); 
-	printdensity(9); 
-	putchard(10);
+	printdensity(1:i16);
+	printdensity(2:i16);
+	printdensity(3:i16); 
+	printdensity(4:i16);
+	printdensity(5:i16); 
+	printdensity(9:i16); 
 };_
 
 # Determine whether the specific location diverges.
 # Solve for z = z^2 + c in the complex plane.
-def double mandelconverger(double real, double imag, double iters, double creal, double cimag)
+def i16 mandelconverger(double real, double imag, i16 iters, double creal, double cimag)
 {
 	if (iters > 255 | (real*real + imag*imag > 4))
 	{
@@ -47,10 +46,8 @@ def double mandelconverger(double real, double imag, double iters, double creal,
 }_
 
 # Return the number of iterations required for the iteration to escape
-def double mandelconverge(double real, double imag)
-    mandelconverger(real, imag, 0, real, imag)_
-
-99999:i32_
+def i16 mandelconverge(double real, double imag)
+    mandelconverger(real, imag, 0:i16, real, imag)_
 
 # Compute and plot the mandelbrot set with the specified 2 dimensional range
 # info.

@@ -153,7 +153,6 @@ public:
     llvm::Value *codegen() override;
 };
 
-// USES TEMPORARY DTYPE
 class IfExprAST : public ExprAST {
     std::unique_ptr<ExprAST> Cond;
     std::unique_ptr<LineAST> Then, Else;
@@ -162,11 +161,10 @@ public:
     IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<LineAST> Then,
               std::unique_ptr<LineAST> Else)
         : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)),
-          ExprAST(type_double) {}
+          ExprAST(type_void) {}
     llvm::Value *codegen() override;
 };
 
-// USES TEMPORARY DTYPE
 class ForExprAST : public ExprAST {
     std::string VarName;
     DataType VarType;
@@ -177,12 +175,11 @@ public:
                std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Step,
                std::unique_ptr<ExprAST> Body)
         : VarName(VarName), VarType(VarType), Start(std::move(Start)), End(std::move(End)),
-          Step(std::move(Step)), Body(std::move(Body)), ExprAST(type_double) {}
+          Step(std::move(Step)), Body(std::move(Body)), ExprAST(type_void) {}
 
     llvm::Value *codegen() override;
 };
 
-// USES TEMPORARY DTYPE
 class VarExprAST : public ExprAST {
     std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
 

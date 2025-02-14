@@ -79,7 +79,6 @@ static std::unique_ptr<ExprAST> ParseParenExpr() {
     return V;
 }
 
-// USES PLACEHOLDER DTYPE
 struct ParserBlockStackData {
     DataType blockDtype = type_UNDECIDED;
     std::map<std::string, DataType> outerVariables;
@@ -116,7 +115,7 @@ static std::unique_ptr<ExprAST> ParseBlock() {
             NamedValuesDatatype.erase(data.localVariables[i]);
     }
     if (data.blockDtype == type_UNDECIDED)
-        data.blockDtype = type_double;
+        data.blockDtype = type_void;
     return std::make_unique<BlockAST>(std::move(lines), data.blockDtype);
 }
 

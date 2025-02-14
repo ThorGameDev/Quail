@@ -11,9 +11,10 @@ enum DataType {
     type_i64 = 4,
     type_float = 5,
     type_double = 6,
-    type_void = 6, // The same as double, until implemented
+    type_void = 7,
 };
 
 std::string dtypeToString(DataType dtype);
+char dtypeToChar(DataType dtype);
 
 #endif

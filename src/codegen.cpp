@@ -87,27 +87,30 @@ Function *getFunction(std::string Name) {
     return nullptr;
 }
 
-Type *getType(DataType dtype){
-    if (dtype == type_double){
+Type *getType(DataType dtype) {
+    if (dtype == type_double) {
         return Type::getDoubleTy(*TheContext);
     }
-    else if (dtype == type_float){
+    else if (dtype == type_float) {
         return Type::getFloatTy(*TheContext);
     }
-    else if (dtype == type_bool){
+    else if (dtype == type_bool) {
         return Type::getInt1Ty(*TheContext);
     }
-    else if (dtype == type_i8){
+    else if (dtype == type_i8) {
         return Type::getInt8Ty(*TheContext);
     }
-    else if (dtype == type_i16){
+    else if (dtype == type_i16) {
         return Type::getInt16Ty(*TheContext);
     }
-    else if (dtype == type_i32){
+    else if (dtype == type_i32) {
         return Type::getInt32Ty(*TheContext);
     }
-    else if (dtype == type_i64){
+    else if (dtype == type_i64) {
         return Type::getInt64Ty(*TheContext);
+    }
+    else if (dtype == type_void) {
+        return Type::getVoidTy(*TheContext);
     }
     LogErrorCompile("Failed to get LLVM type from type '" + dtypeToString(dtype) + "'");
     abort();
@@ -467,7 +470,7 @@ Value *BlockAST::codegen() {
     // Create block and fill with lines
     Builder->SetInsertPoint(CurrentBlock);
 
-    Value *RetVal = Constant::getNullValue(Type::getDoubleTy(*TheContext));
+    Value *RetVal = UndefValue::get(Type::getVoidTy(*TheContext));
     bool hasImmediateReturn = false;
     for (unsigned i = 0, e = Lines.size(); i != e; i++) {
         Value *Line = Lines[i]->codegen();
@@ -501,6 +504,9 @@ Value *BlockAST::codegen() {
         if (!hasImmediateReturn) {
             retType = ReturnFromPoints[0].second->getType();
             RetVal = Constant::getNullValue(ReturnFromPoints[0].second->getType());
+            if (retType == Type::getVoidTy(*TheContext)){
+                RetVal = UndefValue::get(Type::getVoidTy(*TheContext));
+            }
         }
 
         // Create the PHI node to store return values
@@ -517,7 +523,7 @@ Value *BlockAST::codegen() {
 
         return PN;
     }
-    return Constant::getNullValue( Type::getDoubleTy(*TheContext));
+    return UndefValue::get(Type::getVoidTy(*TheContext));
 }
 
 Value *LineAST::codegen() {
@@ -525,11 +531,10 @@ Value *LineAST::codegen() {
     if (returns == true) {
         return body;
     } else {
-        return Constant::getNullValue(Type::getDoubleTy(*TheContext));
+        return UndefValue::get(Type::getVoidTy(*TheContext));
     }
 }
 
-// USES TEMPORARY DTYPE
 Value *IfExprAST::codegen() {
     if (Cond->getDatatype() != type_bool) {
         return LogErrorCompileV("If condition should be a boolean value! Got '" + dtypeToString(Cond->getDatatype()) + "' instead.");
@@ -593,10 +598,9 @@ Value *IfExprAST::codegen() {
     TheFunction->insert(TheFunction->end(), MergeBB);
     Builder->SetInsertPoint(MergeBB);
 
-    return Constant::getNullValue(Type::getDoubleTy(*TheContext));
+    return UndefValue::get(Type::getVoidTy(*TheContext));
 }
 
-// USES TEMPORARY DTYPE
 Value *ForExprAST::codegen() {
     if (End->getDatatype() != type_bool) {
         return LogErrorCompileV("For loop condition should be bool type. Got '" + dtypeToString(End->getDatatype()) + "' instead");
@@ -671,8 +675,7 @@ Value *ForExprAST::codegen() {
     else
         NamedValues.erase(VarName);
 
-    // for expr always returns 0.0.
-    return Constant::getNullValue(Type::getDoubleTy(*TheContext));
+    return UndefValue::get(Type::getVoidTy(*TheContext));
 }
 
 Value *VarExprAST::codegen() {
@@ -719,7 +722,7 @@ Value *VarExprAST::codegen() {
     }
 
     // Return nothing
-    return Constant::getNullValue(Type::getDoubleTy(*TheContext));
+    return UndefValue::get(Type::getVoidTy(*TheContext));
 }
 
 Function *PrototypeAST::codegen() {
@@ -743,8 +746,9 @@ Function *PrototypeAST::codegen() {
     return F;
 }
 
-// USES TEMPORARY DTYPE
-Function *FunctionAST::codegen() { // Might have an error, details are in the tutorial
+// NEEDS SOME WORK!!!
+Function *FunctionAST::codegen() {
+    // Might have an error, details are in the tutorial
     // Transfer ownership of the protype to the FunctionProtos map, but keep a
     // reference to it for use below.
     auto &P = *Proto;
@@ -753,6 +757,7 @@ Function *FunctionAST::codegen() { // Might have an error, details are in the tu
     if (!TheFunction)
         return nullptr;
 
+    // SHOULD BE IN PARSETIME!!!
     // If this is an operator, install it.
     if (P.isBinaryOp())
         BinopProperties[P.getOperatorName()].Precedence = P.getBinaryPrecedence();
@@ -887,7 +892,7 @@ void HandleTopLevelExpression() {
             // Get the symbol's address and cast it into the right type (takes no
             // arguments, returns a double) so we can call it as a native function.
             
-            std::cout << "Data type" << dtype << std::endl;
+            std::cout << "Data type" << dtypeToString(dtype) << std::endl;
             if (dtype == type_double){
                 double (*Function)() = ExprSymbol.getAddress().toPtr<double (*)()>();
                 fprintf(stderr, "Evaluated to %f\n", Function());
@@ -914,6 +919,9 @@ void HandleTopLevelExpression() {
             } else if (dtype == type_i64){
                 int64_t (*Function)() = ExprSymbol.getAddress().toPtr<int64_t (*)()>();
                 fprintf(stderr, "Evaluated to %ld\n", Function());
+            } else if (dtype == type_void){
+                void (*Function)() = ExprSymbol.getAddress().toPtr<void (*)()>();
+                Function();
             }
             
             // Delete the anonymous expression module from the JIT

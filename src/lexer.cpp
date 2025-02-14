@@ -116,6 +116,10 @@ int gettok() {
             TokenDataType = type_i8;
             return tok_dtype;
         }
+        if (IdentifierStr == "void"){
+            TokenDataType = type_void;
+            return tok_dtype;
+        }
         if (IdentifierStr == "true")
             return tok_true;
         if (IdentifierStr == "false")

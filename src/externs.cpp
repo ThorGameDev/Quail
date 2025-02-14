@@ -8,19 +8,20 @@
 #endif
 
 /// putchard - putchar that takes a double and returns 0.
-extern "C" DLLEXPORT double putchard(int8_t X) {
+extern "C" DLLEXPORT void putchard(int8_t X) {
     fputc((char)X, stderr);
-    return 0;
 }
 
 /// printd - printf that takes a double prints it as "%f\n", returning 0.
-extern "C" DLLEXPORT double printd(double X) {
+extern "C" DLLEXPORT void printd(double X) {
     fprintf(stderr, "%f\n", X);
-    return 0;
 }
 
 // i32out - Outputs the contents of X
-extern "C" DLLEXPORT double i32out(int32_t X) {
+extern "C" DLLEXPORT void i32out(int32_t X) {
     fprintf(stderr, "%i\n", X);
-    return 0;
+}
+
+// Void - get a void
+extern "C" DLLEXPORT void Void() {
 }

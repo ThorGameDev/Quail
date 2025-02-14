@@ -25,15 +25,8 @@ def float printdensity(i16 d)
 def i16 mandelconverger(float real, float imag, i16 iters, float creal, float cimag)
 {
 	if (iters > 255 | (real*real + imag*imag > 4))
-	{
 		iters
-	}
-	else
-	{
-		mandelconverger(real*real - imag*imag + creal,
-			2*real*imag + cimag,
-			iters+1, creal, cimag)
-	}
+    mandelconverger(real*real - imag*imag + creal, 2*real*imag + cimag, iters+1, creal, cimag)
 }
 # Return the number of iterations required for the iteration to escape
 def i16 mandelconverge(float real, float imag)

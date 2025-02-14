@@ -548,7 +548,11 @@ Value *IfExprAST::codegen() {
     BasicBlock *ElseBB = BasicBlock::Create(*TheContext, "else");
     BasicBlock *MergeBB = BasicBlock::Create(*TheContext, "ifcont");
 
-    Builder->CreateCondBr(CondV, ThenBB, ElseBB);
+    if(Else){
+        Builder->CreateCondBr(CondV, ThenBB, ElseBB);
+    } else {
+        Builder->CreateCondBr(CondV, ThenBB, MergeBB);
+    }
 
     // Emit then value.
     Builder->SetInsertPoint(ThenBB);
@@ -566,27 +570,29 @@ Value *IfExprAST::codegen() {
         Builder->CreateBr(MergeBB);
     }
 
-    // Emit else block.
-    TheFunction->insert(TheFunction->end(), ElseBB);
-    Builder->SetInsertPoint(ElseBB);
+    if (Else) {
+        // Emit else block, if an else statement exists
+        TheFunction->insert(TheFunction->end(), ElseBB);
+        Builder->SetInsertPoint(ElseBB);
 
-    Value *ElseV = Else->codegen();
-    if (!ElseV)
-        return nullptr;
+        Value *ElseV = Else->codegen();
+        if (!ElseV)
+            return nullptr;
 
-    // Codegen of 'Else' can change the current block, update ElseBB for the PHI.
-    ElseBB = Builder->GetInsertBlock();
+        // Codegen of 'Else' can change the current block, update ElseBB for the PHI.
+        ElseBB = Builder->GetInsertBlock();
 
-    // If "else" block does not have a semicolon, then if it is called, it should trigger a block return
-    if (Else->getReturns() && BlockStack.size() > 0) {
-        BlockStack.top()->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(ElseBB, ElseV));
-    } else {
-        Builder->CreateBr(MergeBB);
+        // If "else" block does not have a semicolon, then if it is called, it should trigger a block return
+        if (Else->getReturns() && BlockStack.size() > 0) {
+            BlockStack.top()->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(ElseBB, ElseV));
+        } else {
+            Builder->CreateBr(MergeBB);
+        }
     }
-
     // Emit merge block.
     TheFunction->insert(TheFunction->end(), MergeBB);
     Builder->SetInsertPoint(MergeBB);
+
     return Constant::getNullValue(Type::getDoubleTy(*TheContext));
 }
 

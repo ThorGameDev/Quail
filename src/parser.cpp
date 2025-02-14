@@ -205,23 +205,23 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
                     "differs from the current block return type of '" + dtypeToString(ParseBlockStack.top()->blockDtype) + "'");
     }
 
-    if (CurTok != tok_else)
-        return LogErrorParse("Expected else");
+    if (CurTok == tok_else){
+        getNextToken();
+        std::unique_ptr<LineAST> Else = ParseLine();
+        if (!Else)
+            return nullptr;
 
-    getNextToken();
-    std::unique_ptr<LineAST> Else = ParseLine();
-    if (!Else)
-        return nullptr;
+        if(Else->getReturns() && !ParseBlockStack.empty()) {
+            if (ParseBlockStack.top()->blockDtype == type_UNDECIDED)
+                ParseBlockStack.top()->blockDtype = Else->getDatatype();
+            else if (ParseBlockStack.top()->blockDtype != Else->getDatatype())
+                return LogErrorParse("If statement's return type '" + dtypeToString(Else->getDatatype()) + "' " + 
+                        "differs from the current block return type of '" + dtypeToString(ParseBlockStack.top()->blockDtype) + "'");
+        }
 
-    if(Else->getReturns() && !ParseBlockStack.empty()) {
-        if (ParseBlockStack.top()->blockDtype == type_UNDECIDED)
-            ParseBlockStack.top()->blockDtype = Else->getDatatype();
-        else if (ParseBlockStack.top()->blockDtype != Else->getDatatype())
-            return LogErrorParse("If statement's return type '" + dtypeToString(Else->getDatatype()) + "' " + 
-                    "differs from the current block return type of '" + dtypeToString(ParseBlockStack.top()->blockDtype) + "'");
+        return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then), std::move(Else));
     }
-
-    return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then), std::move(Else));
+    return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then), std::move(nullptr));
 }
 
 // forexper ::= 'for' identifier '=' expr ',' exper (',' expr)? 'in' expression

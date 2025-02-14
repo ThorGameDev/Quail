@@ -1,4 +1,4 @@
-extern double putchard(i8 char);_
+extern double putchard(i8 char);
 
 def float printdensity(i16 d)
 {
@@ -18,7 +18,7 @@ def float printdensity(i16 d)
 	{
 		putchard(42);
 	};
-};_
+};
 
 # Determine whether the specific location diverges.
 # Solve for z = z^2 + c in the complex plane.
@@ -34,10 +34,10 @@ def i16 mandelconverger(float real, float imag, i16 iters, float creal, float ci
 			2*real*imag + cimag,
 			iters+1, creal, cimag)
 	}
-}_
+}
 # Return the number of iterations required for the iteration to escape
 def i16 mandelconverge(float real, float imag)
-    mandelconverger(real, imag, 0:i16, real, imag)_
+    mandelconverger(real, imag, 0:i16, real, imag)
 
 # Compute and plot the mandelbrot set with the specified 2 dimensional range
 # info.
@@ -51,7 +51,7 @@ def float mandelhelp(float xmin, float xmax, float xstep, float ymin, float ymax
 		};
 		putchard(10);
 	};    
-};_
+};
 
 # mandel - This is a convenient helper function for plotting the mandelbrot set
 # from the specified position with the specified Magnification.
@@ -59,8 +59,8 @@ def float mandel(float realstart, float imagstart, float realmag, float imagmag)
 {
 	mandelhelp(realstart, realstart+realmag*78, realmag,
 		imagstart, imagstart+imagmag*40, imagmag);
-};_
+};
 
-mandel(-2.3:f, -1.3:f, 0.05:f, 0.07:f);_
-mandel(-2.0:f, -1.0:f, 0.02:f, 0.04:f);_
-mandel(-0.9:f, -1.4:f, 0.02:f, 0.03:f);_
+mandel(-2.3:f, -1.3:f, 0.05:f, 0.07:f);
+mandel(-2.0:f, -1.0:f, 0.02:f, 0.04:f);
+mandel(-0.9:f, -1.4:f, 0.02:f, 0.03:f);

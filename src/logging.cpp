@@ -49,3 +49,7 @@ llvm::Value *LogCompilerBug(std::string Str) {
     abort();
     return nullptr;
 }
+
+void DebugLog(std::string Str){
+     std::cerr << Str << "\n";
+}

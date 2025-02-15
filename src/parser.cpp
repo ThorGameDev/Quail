@@ -86,9 +86,11 @@ struct ParserBlockStackData {
     std::vector<std::string> localVariables;
 };
 static std::stack<ParserBlockStackData*> ParseBlockStack;
-static std::unique_ptr<ExprAST> ParseBlock() {
-    if (CurTok != '{')
-        return LogErrorParse("expected '{'. Got '" + tokop(CurTok) + "'");
+static std::unique_ptr<BlockAST> ParseBlock() {
+    if (CurTok != '{'){
+        LogErrorParse("expected '{'. Got '" + tokop(CurTok) + "'");
+        return nullptr;
+    }
     getNextToken(); // Eat {
 
     std::vector<std::unique_ptr<LineAST>> lines;
@@ -99,10 +101,12 @@ static std::unique_ptr<ExprAST> ParseBlock() {
         if(line->getReturns()) {
             if (data.blockDtype == type_UNDECIDED)
                 data.blockDtype = line->getDatatype();
-            else if (data.blockDtype != line->getDatatype())
-                return LogErrorParse("Block can not have multiple return types. " +
+            else if (data.blockDtype != line->getDatatype()){
+                LogErrorParse("Block can not have multiple return types. " +
                         dtypeToString(data.blockDtype) + " and " + 
                         dtypeToString(line->getDatatype()) + " are both returned");
+                return nullptr;
+            }
         }
         lines.push_back(std::move(line));
     }
@@ -490,7 +494,6 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
     }
 }
 
-
 static std::unique_ptr<ExprAST> ParseExpression() {
     auto LHS = ParseUnary();
     if (!LHS) {
@@ -637,8 +640,13 @@ std::unique_ptr<FunctionAST> ParseDefinition() {
     auto Proto = ParsePrototype();
     if (!Proto) return nullptr;
 
-    if (auto Body = ParseLine())
+    if (auto Body = ParseBlock()){
+        if (CurTok == ';' && Proto->getDataType() != type_void) {
+            LogErrorParse("Non null function block can not have ';'");
+            return nullptr;
+        }
         return std::make_unique<FunctionAST>(std::move(Proto), std::move(Body));
+    }
     return nullptr;
 }
 

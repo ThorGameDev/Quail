@@ -400,7 +400,7 @@ Value *BinaryExprAST::codegen() {
     // If it wasn't a builtin binary operator, it must be a user defined one. Emit
     // a call to it.
     Function *F = getFunction(std::string("binary") + tokop(Op));
-    assert(F && "binary operator not found!");
+    LogCompilerBug("binary operator not found! '" + tokop(Op) + "' does not exist");
 
     Value *Ops[2] = { L, R };
     return Builder->CreateCall(F, Ops, "binop");

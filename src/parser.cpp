@@ -13,6 +13,7 @@
 #include <memory>
 #include <stack>
 #include <string>
+#include <utility>
 #include <vector>
 
 
@@ -317,12 +318,14 @@ static std::unique_ptr<ExprAST> ParseVarExpr() {
         return LogErrorParse("Expected datatype token. Instead got '" + tokop(CurTok) + "'");
     getNextToken(); // eat the var.
 
-    std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
+    std::vector<std::string> VarNames;
+    std::vector<std::unique_ptr<ExprAST>> VarValues;
 
     // At least one variable name is required
     if (CurTok != tok_identifier)
         return LogErrorParse("expected identifier after '" + dtypeToString(dtype) + "' declaration");
 
+    // Store each name
     while (true) {
         std::string Name = IdentifierStr;
         ParseBlockStack.top()->localVariables.push_back(Name);
@@ -332,30 +335,56 @@ static std::unique_ptr<ExprAST> ParseVarExpr() {
         else {
             ParseBlockStack.top()->outerVariables[Name] = NamedValuesDatatype[Name];
         }
-        getNextToken(); // eat identifier.
+        VarNames.push_back(Name);
+        getNextToken(); // eat identifier
 
-        // Read the optional initializer.
-        std::unique_ptr<ExprAST> Init;
-        if (CurTok == '=') {
-            getNextToken(); // eat the '='.
-
-            Init = ParseExpression();
-            if (!Init) return nullptr;
-        }
-
-        VarNames.push_back(std::make_pair(Name, std::move(Init)));
-
-        // End of var list, exit loop.
+        // if end of var list, exit loop.
         if (CurTok != ',') break;
         getNextToken(); // eat the ','.
 
         if (CurTok != tok_identifier)
-            return LogErrorParse("expected identifier list after '" + dtypeToString(dtype) + "' declaration due to ',' token.");
+            return LogErrorParse("expected identifier list to continue after '" + dtypeToString(dtype) + "' declaration due to ',' token.");
     }
 
-    // Check and consume In omitted
+    if (CurTok != '=') 
+        return LogErrorParse("expected '=' after '" + dtypeToString(dtype) + "' declaration");
+    getNextToken(); // eat the '='.
 
-    return std::make_unique<VarExprAST>(std::move(VarNames), dtype);
+    // Store each value
+    while (true) {
+        std::unique_ptr<ExprAST> Init;
+        Init = ParseExpression();
+        if (!Init) return nullptr;
+
+        if (Init->getDatatype() != dtype)
+            return LogErrorParse("Variable of type '"+dtypeToString(Init->getDatatype())+"' is used as an initilizer within a '"
+                    + dtypeToString(dtype) + "' variable expression.");
+        
+        VarValues.push_back(std::move(Init));
+
+        // End of var list, exit loop.
+        if (CurTok != ',') break;
+        getNextToken(); // eat the ','.
+    }
+
+    std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarPairs;
+    if(VarNames.size() == VarValues.size()){
+        for(int i = 0; i < VarValues.size(); i++){
+            VarPairs.push_back(std::make_pair(VarNames[i], std::move(VarValues[i])));
+        }
+    }
+    else if (VarValues.size() == 1){
+        VarPairs.push_back(std::make_pair(VarNames[0], std::move(VarValues[0])));
+        for(int i = 1; i < VarNames.size(); i++){
+            VarPairs.push_back(std::make_pair(VarNames[i], nullptr));
+        }
+    }
+    else{
+        return LogErrorParse("'"+ dtypeToString(dtype) + "' declaration should have the number of names(" +
+                std::to_string(VarNames.size()) + ") equal values(" + std::to_string(VarValues.size()) + ") or 1. ");
+    }
+
+    return std::make_unique<VarExprAST>(std::move(VarPairs), dtype);
 }
 
 /// primary

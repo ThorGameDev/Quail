@@ -683,8 +683,29 @@ Value *VarExprAST::codegen() {
 
     Function *TheFunction = Builder->GetInsertBlock()->getParent();
 
+    // Save the first variable, in case it is needed latter
+    const std::string &VarName = VarNames[0].first;
+    ExprAST *Init = VarNames[0].second.get();
+
+    Value *FirstInitVal;
+    if (Init) {
+        FirstInitVal = Init->codegen();
+        if (!FirstInitVal)
+            return nullptr;
+    } else {
+        // If not specified, throw an error.
+        return LogCompilerBug("Did not get an initial value from variable expression for '" + VarName + "'");
+    }
+
+    AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName, FirstInitVal->getType());
+    Builder->CreateStore(FirstInitVal, Alloca);
+
+    OldBindings.push_back(NamedValues[VarName]);
+    NamedValues[VarName] = Alloca;
+
+    // Save all the other variables
     // Register all variables and emit their initializer.
-    for (unsigned i = 0, e = VarNames.size(); i != e; i++) {
+    for (unsigned i = 1, e = VarNames.size(); i != e; i++) {
         const std::string &VarName = VarNames[i].first;
         ExprAST *Init = VarNames[i].second.get();
 
@@ -696,11 +717,11 @@ Value *VarExprAST::codegen() {
         Value *InitVal;
         if (Init) {
             InitVal = Init->codegen();
-            if (!InitVal)
+            if (!InitVal){
                 return nullptr;
+            }
         } else {
-            // If not specified, use 0.0
-            InitVal = ConstantFP::get(*TheContext, APFloat(0.0));
+            InitVal = FirstInitVal;
         }
 
         AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName, InitVal->getType());

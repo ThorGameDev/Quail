@@ -8,7 +8,8 @@ SOURCES = quail.cpp ./src/lexer.cpp ./src/externs.cpp ./src/parser.cpp ./src/log
 OBJECTS = $(SOURCES:.cpp=.o)
 
 # Define the flags
-CXXFLAGS = -O3 -g
+CXXFLAGS = -O3 
+FINALFLAGS = -fexceptions
 LDFLAGS = -Xlinker --export-dynamic
 
 # Get flags and libraries from llvm-config
@@ -18,7 +19,7 @@ LLVM_SYSTEM_LIBS = `llvm-config --system-libs`
 LLVM_LIBS = `llvm-config --libs core orcjit native`
 
 # Combine all flags and libraries
-FLAGS = $(CXXFLAGS) $(LLVM_FLAGS)
+FLAGS = $(CXXFLAGS) $(LLVM_FLAGS) $(FINALFLAGS)
 LIBS = $(LLVM_LDFLAGS) $(LLVM_SYSTEM_LIBS) $(LLVM_LIBS)
 
 # Define the target executable

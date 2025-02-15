@@ -1,23 +1,24 @@
 #include "./logging.h"
+#include <exception>
 #include <iostream>
 #include <string>
 
 /// LogError* - These are little helper funcions for error handling.
 std::unique_ptr<ExprAST> LogError(std::string Str) {
     std::cout << "Error: " << Str << "\n";
-    abort();
+    throw CompileError();
     return nullptr;
 }
 
 std::unique_ptr<ExprAST> LogErrorParse(std::string Str) {
     std::cout << "Syntax Error: " << Str << "\n";
-    abort();
+    throw CompileError();
     return nullptr;
 }
 
 std::unique_ptr<ExprAST> LogErrorCompile(std::string Str) {
     std::cout << "Compile Error: " << Str << "\n";
-    abort();
+    throw CompileError();
     return nullptr;
 }
 
@@ -53,3 +54,4 @@ llvm::Value *LogCompilerBug(std::string Str) {
 void DebugLog(std::string Str){
      std::cerr << Str << "\n";
 }
+

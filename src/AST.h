@@ -124,8 +124,8 @@ class UnaryExprAST : public ExprAST {
     std::unique_ptr<ExprAST> Operand;
 
 public:
-    UnaryExprAST(int Opcode, std::unique_ptr<ExprAST> Operand)
-        : Opcode(Opcode), Operand(std::move(Operand)), ExprAST(Operand->getDatatype() ) {}
+    UnaryExprAST(int Opcode, std::unique_ptr<ExprAST> Operand, DataType dtype)
+        : Opcode(Opcode), Operand(std::move(Operand)), ExprAST(dtype) {}
     llvm::Value *codegen() override;
 };
 
@@ -199,14 +199,13 @@ class PrototypeAST {
     std::vector<std::pair<std::string, DataType>> Args;
     bool IsOperator;
     unsigned Precedence; //Precedence if a binary op.
-    int OperatorName;
 
 public:
     PrototypeAST(const std::string &Name, std::vector<std::pair<std::string, DataType>> Args,
                  DataType returnType, bool IsOperator = false, unsigned Prec = 0,
                  int OperatorName = 0)
         : Name(Name), Args(std::move(Args)), IsOperator(IsOperator),
-          Precedence(Prec), OperatorName(OperatorName), ReturnType(returnType) {}
+          Precedence(Prec), ReturnType(returnType) {}
 
     llvm::Function *codegen();
     const std::string &getName() const {
@@ -216,13 +215,9 @@ public:
     bool isUnaryOp() const {
         return IsOperator && Args.size() == 1;
     }
+
     bool isBinaryOp() const {
         return IsOperator && Args.size() == 2;
-    }
-
-    int getOperatorName() const {
-        assert(isUnaryOp() || isBinaryOp());
-        return OperatorName;
     }
 
     unsigned getBinaryPrecedence() const {
@@ -231,6 +226,14 @@ public:
 
     DataType getDataType() const {
         return ReturnType;
+    }
+
+    std::pair<DataType, DataType> getBinopSig() const {
+        return std::make_pair(Args[0].second, Args[1].second);
+    }
+
+    DataType getUnopSig() const {
+        return Args[0].second;
     }
 };
 

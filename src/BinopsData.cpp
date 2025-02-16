@@ -4,6 +4,7 @@
 
 std::vector<int> longops;
 std::map<int, BinopProperty> BinopProperties;
+std::map<int, std::map<DataType, DataType>> UnopProperties;
 const DataType priorities[] = {type_i64, type_double,type_i32, type_float,type_i16, type_i8, type_bool};
 const int numPriorities = 6;
 
@@ -96,4 +97,13 @@ void InitializeBinopPrecedence() {
     longops.push_back(optok("!="));
     longops.push_back(optok(">="));
     longops.push_back(optok("<="));
+
+    UnopProperties['!'] = std::map<DataType, DataType>();
+    UnopProperties['-'] = std::map<DataType, DataType>();
+    UnopProperties['!'][type_bool] = type_bool;
+    for(int i = 0; i <= numPriorities; i++){
+        if (priorities[i] != type_bool){
+            UnopProperties['-'][priorities[i]] = priorities[i];
+        }
+    }
 }

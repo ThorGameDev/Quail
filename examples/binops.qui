@@ -1,0 +1,47 @@
+def i8 operator >> 100 (i8 left, i8 right) { 
+    i8 shiftright = 1; 
+    for (i8 i = 0; i < right; i = i + 1 ){
+        shiftright = shiftright * 2;
+    };
+    i8 retval = left / shiftright;
+    retval
+}
+
+def i8 operator << 100 (i8 left, i8 right) { 
+    i8 retval = left; 
+    for (i8 i = 0; i < right; i = i + 1 ){
+        retval = retval * 2;
+    };
+    retval
+}
+
+def i8 operator @ (i8 input){
+    input * input
+}
+
+@@2 >> 2
+16 << 2
+
+def bool operator $_ (i8 input){
+    if (input > 100) {
+        true
+    }
+    if (input == 0) {
+        true
+    }
+    false
+}
+
+def bool show() {
+  $_0
+}
+# Returns true, as it should
+show()
+# This should return False, but it actually returns true.
+# Not works properly.
+# The issue lies in the fact that elseless if statements are broken.
+# The problem If statements are in the $_ function.
+# It works if the first if statement has an else that always returns.
+# If the first if statement doesn't have an else, or if that else -
+#  - only sometimes returns, it does not work.
+!show()

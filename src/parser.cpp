@@ -442,9 +442,20 @@ static std::unique_ptr<ExprAST> ParseUnary() {
 
     // If this is a unary operator, read it.
     int Opc = CurTok;
+    if(UnopProperties.count(Opc) == 0){
+        return LogErrorParse("Unknown unary operator '" + tokop(Opc) + "'");
+    }
+
     getNextToken();
-    if (auto Operand = ParseUnary())
-        return std::make_unique<UnaryExprAST>(Opc, std::move(Operand));
+    if (auto Operand = ParseUnary()){
+        DataType inputType = Operand->getDatatype();
+        if (UnopProperties[Opc].count(inputType) == 0){
+            return LogErrorParse("Can not perform unary operator '" + tokop(Opc) +
+                    "' with type '" + dtypeToString(inputType) + "'");
+        }
+
+        return std::make_unique<UnaryExprAST>(Opc, std::move(Operand), UnopProperties[Opc][inputType]);
+    }
     return nullptr;
 }
 
@@ -532,8 +543,9 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
         return LogErrorParseP("No type specified in prototype");
     getNextToken(); // Eat datatype
 
-    unsigned Kind = 0; // 0 = identifier, 1 = unary, 2 = binary.
-    unsigned BinaryPrecedence = 30;
+    bool isOperator = false;
+    int BinaryPrecedence = -1;
+    const int defaultBinPrecedence = 30;
     std::string FnSufix;
     int OperatorName;
     switch (CurTok) {
@@ -541,33 +553,16 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
         return LogErrorParseP("Expected function name in '" + tokop(ReturnType) + "' type prototype");
     case tok_identifier:
         FnName = IdentifierStr;
-        Kind = 0;
+        isOperator = false;
         getNextToken();
         break;
-    case tok_unary:
-        getNextToken();
-        if (CurTok < 0)
-            return LogErrorParseP("Expected unary operator. Got '" + tokop(CurTok) + "' instead");
-        FnName = "unary";
-        FnSufix = (char)CurTok;
-        Kind = 1;
-        getNextToken();
-        if (isascii(CurTok) && CurTok != '(') {
-            FnSufix += (char)CurTok;
-            longops.push_back(optok(FnSufix));
-            getNextToken();
-        }
-        FnName += FnSufix;
-        OperatorName = optok(FnSufix);
-
-        break;
-    case tok_binary:
+    case tok_operator:
         getNextToken();
         if (CurTok < 0)
             return LogErrorParseP("Expected binary operator. Got '" + tokop(CurTok) + "' instead");
-        FnName = "binary";
+        FnName = "operator";
         FnSufix = (char)CurTok;
-        Kind = 2;
+        isOperator = true;
         getNextToken();
         if (isascii(CurTok) && CurTok != '(') {
             FnSufix += (char)CurTok;
@@ -576,7 +571,6 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
         }
         FnName += FnSufix;
         OperatorName = optok(FnSufix);
-
 
         // Read the precedence if present.
         if (CurTok == tok_number) {
@@ -622,16 +616,36 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
     getNextToken(); // eat ')'.
 
     // Verify right number of names for operator.
-    if (Kind == 1 && Arguments.size() != 1){
-        return LogErrorParseP("Expected 1 argument for unary operator. Got '" + std::to_string(Arguments.size()) + "'");
+    if (isOperator && Arguments.size() != 1 && Arguments.size() != 2) {
+        return LogErrorParseP("Expected 1 or 2 argument for operator. Got '" + std::to_string(Arguments.size()) + "'");
     }
-    else if (Kind == 2 && Arguments.size() != 2){
-        return LogErrorParseP("Expected 2 arguments for binary operator. Got '" + std::to_string(Arguments.size()) + "'");
+
+    if (isOperator && Arguments.size() == 1 && BinaryPrecedence != -1) {
+        return LogErrorParseP("Can not accept operator precidence for unary operator '" + tokop(OperatorName) + "'");
+    }
+    if (BinaryPrecedence == -1) {
+        BinaryPrecedence = defaultBinPrecedence;
+    }
+    // If this is a Binop, install it.
+    if(isOperator && Arguments.size() == 2){
+        if (BinopProperties.count(OperatorName) == 0){
+            BinopProperties[OperatorName] =
+                {(int)BinaryPrecedence, std::map<std::pair<DataType, DataType>, DataType>()};
+        }
+        auto sig = std::make_pair(Arguments[0].second, Arguments[1].second);
+        BinopProperties[OperatorName].CompatibilityChart[sig] = ReturnType;
+    }
+    // If this is a Unop, install it
+    if(isOperator && Arguments.size() == 1){
+        if (UnopProperties.count(OperatorName) == 0){
+            UnopProperties[OperatorName] = std::map<DataType, DataType>();
+        }
+        UnopProperties[OperatorName][Arguments[0].second] = ReturnType;
     }
 
     FunctionDataTypes[FnName] = std::make_pair(ReturnType, std::move(argsig));
 
-    return std::make_unique<PrototypeAST>(FnName, std::move(Arguments), ReturnType, Kind != 0, BinaryPrecedence, OperatorName);
+    return std::make_unique<PrototypeAST>(FnName, std::move(Arguments), ReturnType, isOperator, BinaryPrecedence);
 }
 
 /// definition ::= 'def' prototype expression

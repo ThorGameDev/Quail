@@ -333,10 +333,10 @@ Value* Div(DataType LHS, DataType RHS, Value* L, Value* R){
 };
 
 Value* Neg(DataType dtype, Value* input){
-    if (dtype == type_float){
+    if (isFP(dtype)) {
         return Builder->CreateFNeg(input, "negtmp");
     }
-    else{
+    else {
         return Builder->CreateNeg(input, "negtmp");
     }
 };
@@ -399,8 +399,9 @@ Value *BinaryExprAST::codegen() {
     }
     // If it wasn't a builtin binary operator, it must be a user defined one. Emit
     // a call to it.
-    Function *F = getFunction(std::string("binary") + tokop(Op));
-    LogCompilerBug("binary operator not found! '" + tokop(Op) + "' does not exist");
+    Function *F = getFunction(std::string("operator") + tokop(Op));
+    if (!F)
+        LogCompilerBug("binary operator not found! '" + std::string("operator") + tokop(Op) + "' does not exist");
 
     Value *Ops[2] = { L, R };
     return Builder->CreateCall(F, Ops, "binop");
@@ -412,21 +413,25 @@ Value *UnaryExprAST::codegen() {
     if (!OperandV)
         return nullptr;
 
+    if (UnopProperties.count(Opcode) == 0){
+        return LogCompilerBug("Unknown unary operator '" + tokop(Opcode) + "'");
+    }
+    if (UnopProperties[Opcode].count(DT) == 0){
+        return LogCompilerBug("Can not perform unary operator '" + tokop(Opcode) + "' with type '" + dtypeToString(DT) + "'");
+    }
+
     switch(Opcode) {
     case '-':
         return BinOps::Neg(DT, OperandV);
     case '!':
-        OperandV = Builder->CreateFCmpONE(
-                       OperandV, ConstantFP::get(*TheContext, APFloat(0.0)), "loopcond");
-        OperandV = Builder->CreateNot(OperandV);
-        return Builder->CreateUIToFP(OperandV, Type::getDoubleTy(*TheContext));
+        return Builder->CreateNot(OperandV, "not");
     default:
         break;
     }
 
-    Function *F = getFunction(std::string("unary") + tokop(Opcode));
+    Function *F = getFunction(std::string("operator") + tokop(Opcode));
     if (!F)
-        return LogErrorCompileV("Unknown unary operator '" + tokop(Opcode) + "'");
+        return LogCompilerBug("Unknown unary operator '" + tokop(Opcode) + "' after all checks completed");
 
     return Builder->CreateCall(F, OperandV, "unop");
 }
@@ -777,11 +782,6 @@ Function *FunctionAST::codegen() {
     Function *TheFunction = getFunction(P.getName());
     if (!TheFunction)
         return nullptr;
-
-    // SHOULD BE IN PARSETIME!!!
-    // If this is an operator, install it.
-    if (P.isBinaryOp())
-        BinopProperties[P.getOperatorName()].Precedence = P.getBinaryPrecedence();
 
     // Create a new basic block to start insertion into.
     BasicBlock *BB = BasicBlock::Create(*TheContext, "entry", TheFunction);

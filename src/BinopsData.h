@@ -12,6 +12,7 @@ struct BinopProperty{
 };
 
 extern std::map<int, BinopProperty> BinopProperties;
+extern std::map<int, std::map<DataType, DataType>> UnopProperties;
 extern std::vector<int> longops;
 extern const DataType priorities[];
 extern const int numPriorities;

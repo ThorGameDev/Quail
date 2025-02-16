@@ -33,11 +33,10 @@ enum Token {
     tok_for = -14,
 
     //operators
-    tok_binary = -15,
-    tok_unary = -16,
+    tok_operator = -15,
 
     // var definition
-    tok_dtype = -17,
+    tok_dtype = -16,
 };
 
 int optok(std::string op);

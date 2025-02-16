@@ -42,10 +42,8 @@ std::string tokop(int op) {
                 return "tok_else";
             case tok_for:
                 return "tok_for";
-            case tok_binary:
-                return "tok_binary";
-            case tok_unary:
-                return "tok_unary";
+            case tok_operator:
+                return "tok_operator";
             case tok_dtype:
                 return "tok_dtype";
             default:
@@ -84,10 +82,8 @@ int gettok() {
             return tok_else;
         if (IdentifierStr == "for")
             return tok_for;
-        if (IdentifierStr == "binary")
-            return tok_binary;
-        if (IdentifierStr == "unary")
-            return tok_unary;
+        if (IdentifierStr == "operator")
+            return tok_operator;
         if (IdentifierStr == "double"){
             TokenDataType = type_double;
             return tok_dtype;

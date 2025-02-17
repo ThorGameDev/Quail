@@ -8,7 +8,7 @@ SOURCES = quail.cpp ./src/lexer.cpp ./src/externs.cpp ./src/parser.cpp ./src/log
 OBJECTS = $(SOURCES:.cpp=.o)
 
 # Define the flags
-CXXFLAGS = -O3 
+CXXFLAGS = -O3
 FINALFLAGS = -fexceptions
 LDFLAGS = -Xlinker --export-dynamic
 

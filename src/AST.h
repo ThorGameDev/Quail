@@ -85,6 +85,42 @@ public:
     llvm::Value *codegen() override;
 };
 
+/// U64ExprAST - Expression class for 32 bit unsigned integers
+class U64ExprAST : public ExprAST {
+    uint64_t Val;
+
+public:
+    U64ExprAST(uint64_t Val) : Val(Val), ExprAST(type_u64) {}
+    llvm::Value *codegen() override;
+};
+
+/// U32ExprAST - Expression class for 32 bit unsigned integers
+class U32ExprAST : public ExprAST {
+    uint32_t Val;
+
+public:
+    U32ExprAST(uint32_t Val) : Val(Val), ExprAST(type_u32) {}
+    llvm::Value *codegen() override;
+};
+
+/// U16ExprAST - Expression class for 16 bit unsigned integers
+class U16ExprAST : public ExprAST {
+    uint16_t Val;
+
+public:
+    U16ExprAST(uint16_t Val) : Val(Val), ExprAST(type_u16) {}
+    llvm::Value *codegen() override;
+};
+
+/// U8ExprAST - Expression class for 8 bit unsigned integers
+class U8ExprAST : public ExprAST {
+    uint8_t Val;
+
+public:
+    U8ExprAST(uint8_t Val) : Val(Val), ExprAST(type_u8) {}
+    llvm::Value *codegen() override;
+};
+
 /// BoolExprAST - Expression class for bools
 class BoolExprAST : public ExprAST {
     bool Val;

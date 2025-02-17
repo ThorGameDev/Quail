@@ -39,7 +39,7 @@ static std::unique_ptr<ExprAST> ParseNumberExpr() {
         return Result;
     } 
     else if (TokenDataType == type_i64){
-        auto Result = std::make_unique<I64ExprAST>(INumVal);
+        auto Result = std::make_unique<I64ExprAST>((int64_t)INumVal);
         getNextToken(); // consume the number
         return Result;
     }
@@ -55,6 +55,26 @@ static std::unique_ptr<ExprAST> ParseNumberExpr() {
     }
     else if (TokenDataType == type_i8){
         auto Result = std::make_unique<I8ExprAST>((int8_t)INumVal);
+        getNextToken(); // consume the number
+        return Result;
+    }
+    else if (TokenDataType == type_u64){
+        auto Result = std::make_unique<U64ExprAST>((uint64_t)INumVal);
+        getNextToken(); // consume the number
+        return Result;
+    }
+    else if (TokenDataType == type_u32){
+        auto Result = std::make_unique<U32ExprAST>((uint32_t)INumVal);
+        getNextToken(); // consume the number
+        return Result;
+    }
+    else if (TokenDataType == type_u16){
+        auto Result = std::make_unique<U16ExprAST>((uint16_t)INumVal);
+        getNextToken(); // consume the number
+        return Result;
+    }
+    else if (TokenDataType == type_u8){
+        auto Result = std::make_unique<U8ExprAST>((uint8_t)INumVal);
         getNextToken(); // consume the number
         return Result;
     }

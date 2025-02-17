@@ -103,6 +103,18 @@ Type *getType(DataType dtype) {
     else if (dtype == type_i64) {
         return Type::getInt64Ty(*TheContext);
     }
+    else if (dtype == type_u8) {
+        return Type::getInt8Ty(*TheContext);
+    }
+    else if (dtype == type_u16) {
+        return Type::getInt16Ty(*TheContext);
+    }
+    else if (dtype == type_u32) {
+        return Type::getInt32Ty(*TheContext);
+    }
+    else if (dtype == type_u64) {
+        return Type::getInt64Ty(*TheContext);
+    }
     else if (dtype == type_void) {
         return Type::getVoidTy(*TheContext);
     }
@@ -136,6 +148,22 @@ Value *I8ExprAST::codegen() {
     return ConstantInt::get(*TheContext, APInt(8, Val));
 }
 
+Value *U64ExprAST::codegen() {
+    return ConstantInt::get(*TheContext, APInt(64, Val));
+}
+
+Value *U32ExprAST::codegen() {
+    return ConstantInt::get(*TheContext, APInt(32, Val));
+}
+
+Value *U16ExprAST::codegen() {
+    return ConstantInt::get(*TheContext, APInt(16, Val));
+}
+
+Value *U8ExprAST::codegen() {
+    return ConstantInt::get(*TheContext, APInt(8, Val));
+}
+
 Value *BoolExprAST::codegen() {
     return ConstantInt::get(*TheContext, APInt(1, Val));
 }
@@ -158,15 +186,6 @@ Value *toBool(Value* input) {
 Value* toDouble(Value* input) {
     return Builder->CreateUIToFP(input, Type::getDoubleTy(*TheContext), "tofloat");
 };
-
-bool isSigned(DataType dtype){
-    if (dtype == type_bool) { return false; }
-    else { return true; }
-}
-bool isFP(DataType dtype){
-    if (dtype == type_double || dtype == type_float) { return true; }
-    else { return false; }
-}
 
 Value* expandDataType(Value* input, DataType target, DataType prior){
     if (prior == target){
@@ -204,15 +223,14 @@ Value* expandDataType(Value* input, DataType target, DataType prior){
 };
 
 std::pair<Value*, Value*> expandOperation(DataType LHS, DataType RHS, Value* L, Value* R){
-    DataType biggerType;
-    for(int i = 0; i < numPriorities; i++){
-        if (LHS == priorities[i] || RHS == priorities[i]){
-            biggerType = priorities[i];
-            break;
-        }
+    DataType retType = getExpandType(LHS, RHS);
+    if (retType == type_UNDECIDED){
+        LogCompilerBug("Datatype expansion of type '" + dtypeToString(LHS) + "' and '" + 
+                dtypeToString(RHS) + "' results in compile-time dataloss");
     }
-    Value* LExt = expandDataType(L, biggerType, LHS);
-    Value* RExt = expandDataType(R, biggerType, RHS);
+
+    Value* LExt = expandDataType(L, retType, LHS);
+    Value* RExt = expandDataType(R, retType, RHS);
     return std::make_pair(LExt, RExt);
 };
 
@@ -234,7 +252,8 @@ Value* LogicGate(DataType LHS, DataType RHS, Value* L, Value* R, int gate) {
 
 Value* EqualityCheck(DataType LHS, DataType RHS, Value* L, Value* R, int Op) {
     std::pair<Value*, Value*> parts = expandOperation(LHS, RHS, L, R);
-    if (isFP(LHS) || isFP(RHS)){
+    DataType retType = getExpandType(LHS, RHS);
+    if (isFP(retType)){
         if (Op == '<')
             return Builder->CreateFCmpULT(parts.first, parts.second, "tlttmp");
         else if (Op == '>')
@@ -248,7 +267,7 @@ Value* EqualityCheck(DataType LHS, DataType RHS, Value* L, Value* R, int Op) {
         else if (Op == op_neq)
             return Builder->CreateFCmpUNE(parts.first, parts.second, "tnetmp");
     }
-    else if (isSigned(LHS) || isSigned(RHS)){
+    else if (isSigned(retType)){
         if (Op == '<')
             return Builder->CreateICmpSLT(parts.first, parts.second, "tlttmp");
         else if (Op == '>')
@@ -283,9 +302,9 @@ Value* EqualityCheck(DataType LHS, DataType RHS, Value* L, Value* R, int Op) {
 
 Value* Add(DataType LHS, DataType RHS, Value* L, Value* R){
     std::pair<Value*, Value*> parts = expandOperation(LHS, RHS, L, R);
+    DataType retType = getExpandType(LHS, RHS);
 
-    if (LHS == type_double || LHS == type_float || RHS == type_double ||
-            RHS == type_float){
+    if (isFP(retType)){
         return Builder->CreateFAdd(parts.first, parts.second, "addtmp");
     }
     else{
@@ -294,20 +313,21 @@ Value* Add(DataType LHS, DataType RHS, Value* L, Value* R){
 };
 Value* Sub(DataType LHS, DataType RHS, Value* L, Value* R){
     std::pair<Value*, Value*> parts = expandOperation(LHS, RHS, L, R);
+    DataType retType = getExpandType(LHS, RHS);
 
-    if (LHS == type_double || LHS == type_float || RHS == type_double ||
-            RHS == type_float){
+    if (isFP(retType)){
         return Builder->CreateFSub(parts.first, parts.second, "subtmp");
     }
     else{
         return Builder->CreateSub(parts.first, parts.second, "subtmp");
     }
 };
+
 Value* Mul(DataType LHS, DataType RHS, Value* L, Value* R){
     std::pair<Value*, Value*> parts = expandOperation(LHS, RHS, L, R);
+    DataType retType = getExpandType(LHS, RHS);
 
-    if (LHS == type_double || LHS == type_float || RHS == type_double ||
-            RHS == type_float){
+    if (isFP(retType)) {
         return Builder->CreateFMul(parts.first, parts.second, "multmp");
     }
     else{
@@ -316,13 +336,17 @@ Value* Mul(DataType LHS, DataType RHS, Value* L, Value* R){
 };
 Value* Div(DataType LHS, DataType RHS, Value* L, Value* R){
     std::pair<Value*, Value*> parts = expandOperation(LHS, RHS, L, R);
+    DataType retType = getExpandType(LHS, RHS);
 
-    if (LHS == type_double || LHS == type_float || RHS == type_double ||
-            RHS == type_float){
+    if (retType) {
         return Builder->CreateFDiv(parts.first, parts.second, "divtmp");
     }
     else{
-        return Builder->CreateSDiv(parts.first, parts.second, "divtmp");
+        if (isSigned(retType)){
+            return Builder->CreateSDiv(parts.first, parts.second, "divtmp");
+        } else {
+            return Builder->CreateUDiv(parts.first, parts.second, "divtmp");
+        }
     }
 };
 
@@ -897,6 +921,7 @@ void HandleTopLevelExpression() {
             // Get the symbol's address and cast it into the right type (takes no
             // arguments, returns a double) so we can call it as a native function.
             
+            DebugLog("DataType is " + dtypeToString(dtype));
             if (dtype == type_double){
                 double (*Function)() = ExprSymbol.getAddress().toPtr<double (*)()>();
                 fprintf(stderr, "Evaluated to %f\n", Function());
@@ -929,6 +954,18 @@ void HandleTopLevelExpression() {
             } else if (dtype == type_i64){
                 int64_t (*Function)() = ExprSymbol.getAddress().toPtr<int64_t (*)()>();
                 fprintf(stderr, "Evaluated to %ld\n", Function());
+            } else if (dtype == type_u8){
+                uint8_t (*Function)() = ExprSymbol.getAddress().toPtr<uint8_t (*)()>();
+                fprintf(stderr, "Evaluated to %u\n", Function());
+            } else if (dtype == type_u16){
+                uint16_t (*Function)() = ExprSymbol.getAddress().toPtr<uint16_t (*)()>();
+                fprintf(stderr, "Evaluated to %u\n", Function());
+            } else if (dtype == type_u32){
+                uint32_t (*Function)() = ExprSymbol.getAddress().toPtr<uint32_t (*)()>();
+                fprintf(stderr, "Evaluated to %u\n", Function());
+            } else if (dtype == type_u64){
+                uint64_t (*Function)() = ExprSymbol.getAddress().toPtr<uint64_t (*)()>();
+                fprintf(stderr, "Evaluated to %lu\n", Function());
             } else if (dtype == type_void){
                 void (*Function)() = ExprSymbol.getAddress().toPtr<void (*)()>();
                 Function();

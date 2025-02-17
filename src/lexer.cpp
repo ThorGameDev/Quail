@@ -112,6 +112,22 @@ int gettok() {
             TokenDataType = type_i8;
             return tok_dtype;
         }
+        if (IdentifierStr == "u64"){
+            TokenDataType = type_u64;
+            return tok_dtype;
+        }
+        if (IdentifierStr == "u32"){
+            TokenDataType = type_u32;
+            return tok_dtype;
+        }
+        if (IdentifierStr == "u16"){
+            TokenDataType = type_u16;
+            return tok_dtype;
+        }
+        if (IdentifierStr == "u8"){
+            TokenDataType = type_u8;
+            return tok_dtype;
+        }
         if (IdentifierStr == "void"){
             TokenDataType = type_void;
             return tok_dtype;
@@ -156,6 +172,14 @@ int gettok() {
                 TokenDataType = type_i16;
             if (ExplicitType == "i8")
                 TokenDataType = type_i8;
+            if (ExplicitType == "u64")
+                TokenDataType = type_u64;
+            if (ExplicitType == "u32")
+                TokenDataType = type_u32;
+            if (ExplicitType == "u16")
+                TokenDataType = type_u16;
+            if (ExplicitType == "u8")
+                TokenDataType = type_u8;
             if (ExplicitType == "d")
                 TokenDataType = type_double;
             if (ExplicitType == "f")

@@ -1,0 +1,7 @@
+
+def u8 tst1(u8 input) {
+    input
+}
+
+tst1(1:u8)
+tst1(1:i8)

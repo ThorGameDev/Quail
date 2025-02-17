@@ -5,6 +5,7 @@
 #include "./AST.h"
 #include "./parser.h"
 #include "./logging.h"
+#include "./optimizations.h"
 #include "../include/QuailJIT.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/IR/BasicBlock.h"
@@ -21,19 +22,12 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Transforms/InstCombine/InstCombine.h"
-#include "llvm/Transforms/Scalar.h"
-#include "llvm/Transforms/Scalar/GVN.h"
-#include "llvm/Transforms/Scalar/Reassociate.h"
-#include "llvm/Transforms/Scalar/SimplifyCFG.h"
-#include "llvm/Transforms/Utils/Mem2Reg.h"
 #include "llvm/Support/TargetSelect.h"
 #include <cassert>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <iostream>
 #include <iterator>
 #include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/Constant.h>
@@ -599,7 +593,7 @@ Value *IfExprAST::codegen() {
             Builder->CreateBr(MergeBB);
         }
     }
-    // Emit merge block.
+    
     TheFunction->insert(TheFunction->end(), MergeBB);
     Builder->SetInsertPoint(MergeBB);
 
@@ -846,17 +840,7 @@ void InitializeModuleAndManagers() {
             /*DebugLogging*/ true);
     TheSI->registerCallbacks(*ThePIC, TheMAM.get());
 
-    // Add transform passes
-    // Promote allocas to registers
-    TheFPM->addPass(PromotePass());
-    // Do simple peephole optimizations and bit twiddling optimizations.
-    TheFPM->addPass(InstCombinePass());
-    // reassociate expressions.
-    TheFPM->addPass(ReassociatePass());
-    // Eliminate Common SubExpressions.
-    TheFPM->addPass(GVNPass());
-    // Simplify the control flow graph (deleting unreachable blocks etc.)
-    TheFPM->addPass(SimplifyCFGPass());
+    TheFPM = Optimize(std::move(TheFPM));
 
     // Register analysis passes used in these transform passes.
     PassBuilder PB;
@@ -917,11 +901,19 @@ void HandleTopLevelExpression() {
                 double (*Function)() = ExprSymbol.getAddress().toPtr<double (*)()>();
                 fprintf(stderr, "Evaluated to %f\n", Function());
             } else if (dtype == type_bool){
-                bool (*Function)() = ExprSymbol.getAddress().toPtr<bool (*)()>();
-                if (Function())
+                // This might be a temporary workaround, depending on if the -1 value of true is supposed to happen.
+                // First, we assume that our bool is actually an integer.
+                int8_t (*Function)() = ExprSymbol.getAddress().toPtr<int8_t (*)()>();
+                // Next, we take a bitwise and of 1, essentially only checking for the 1 relevant bit.
+                if (Function() & 1)
                     fprintf(stderr, "Evaluated to True\n");
                 else
                     fprintf(stderr, "Evaluated to False\n");
+                if ((Function() & 1) != Function())
+                    fprintf(stderr, "Bad bool %i was created\n", Function());
+                // It looks like, besides the bad display value, everything works properly with the bools being -1 or -2. 
+                // The ! operation still flips the relevant bit, and addition still adds 1 or 0, as does the other operations.
+                // The bug looks difficult to fix, so only fix if it causes real problems
             } else if (dtype == type_float){
                 float (*Function)() = ExprSymbol.getAddress().toPtr<float (*)()>();
                 fprintf(stderr, "Evaluated to %f\n", Function());

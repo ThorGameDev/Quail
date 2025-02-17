@@ -21,27 +21,3 @@ def i8 operator @ (i8 input){
 
 @@2 >> 2
 16 << 2
-
-def bool operator $_ (i8 input){
-    if (input > 100) {
-        true
-    }
-    if (input == 0) {
-        true
-    }
-    false
-}
-
-def bool show() {
-  $_0
-}
-# Returns true, as it should
-show()
-# This should return False, but it actually returns true.
-# Not works properly.
-# The issue lies in the fact that elseless if statements are broken.
-# The problem If statements are in the $_ function.
-# It works if the first if statement has an else that always returns.
-# If the first if statement doesn't have an else, or if that else -
-#  - only sometimes returns, it does not work.
-!show()

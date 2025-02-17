@@ -1,0 +1,55 @@
+extern void putchard(i8 char);
+
+def bool operator $_ (i8 input){
+    if (input == 0)
+        true
+    else if (input == 10)
+        true
+    false
+}
+
+# This is a strange test case that creates a corrupt false value.
+def bool badF(){
+    !$_0
+}
+
+# This is a strange test case that creates a corrupt true value.
+def bool badT(){
+    $_0
+}
+
+putchard(65); #A
+badT()
+badF()
+
+putchard(66); #B
+10 * badT()
+10 * badF()
+
+putchard(67); #C
+10 + badT()
+10 + badF()
+
+putchard(68); #D
+10 - badT()
+10 - badF()
+
+putchard(69); #E
+badT() || badT()
+badT() || badF()
+badF() || badT()
+badF() || badF()
+
+putchard(70); #F
+badT() | badT()
+badT() | badF()
+badF() | badT()
+badF() | badF()
+
+putchard(71); #G
+badT() & badT()
+badT() & badF()
+badF() & badT()
+badF() & badF()
+
+# All test cases show no problems.

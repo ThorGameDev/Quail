@@ -85,7 +85,7 @@ public:
     llvm::Value *codegen() override;
 };
 
-// BoolExprAST - Expression class for bools
+/// BoolExprAST - Expression class for bools
 class BoolExprAST : public ExprAST {
     bool Val;
 

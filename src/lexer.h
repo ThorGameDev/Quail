@@ -51,4 +51,6 @@ int gettok();
 
 extern int CurTok;
 int getNextToken();
+
+void clearTok();
 #endif

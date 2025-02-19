@@ -2,12 +2,13 @@
 #include "./src/codegen.h"
 #include "./src/BinopsData.h"
 #include "./src/logging.h"
+#include <iostream>
 
 /// top ::= definition | external | expression | ';'
 static void MainLoop() {
     while (true) {
         try {
-            fprintf(stderr, "\nready> ");
+            std::cout << ">>> ";
             switch (CurTok) {
             case tok_eof:
                 return;
@@ -27,6 +28,9 @@ static void MainLoop() {
         }
         catch (CompileError ce){
             DebugLog("Error Recovered");
+            clearTok();
+            std::cout << ">>> ";
+            getNextToken();
         }
     }
 }
@@ -36,7 +40,7 @@ int main() {
     InitializeBinopPrecedence();
 
     // Prime the first token.
-    fprintf(stderr, "ready> ");
+    std::cout << ">>> ";
     getNextToken();
 
     // Make the module, which holds all the code

@@ -60,9 +60,8 @@ std::string tokop(int op) {
 }
 
 // gettok - Return the next token from the standard input.
+static char LastChar = ' ';
 int gettok() {
-    static char LastChar = ' ';
-
     //Skip any white space
     while (isspace(LastChar))
         LastChar = getchar();
@@ -74,67 +73,67 @@ int gettok() {
 
         if (IdentifierStr == "def")
             return tok_def;
-        if (IdentifierStr == "extern")
+        else if (IdentifierStr == "extern")
             return tok_extern;
-        if (IdentifierStr == "if")
+        else if (IdentifierStr == "if")
             return tok_if;
-        if (IdentifierStr == "else")
+        else if (IdentifierStr == "else")
             return tok_else;
-        if (IdentifierStr == "for")
+        else if (IdentifierStr == "for")
             return tok_for;
-        if (IdentifierStr == "operator")
+        else if (IdentifierStr == "operator")
             return tok_operator;
-        if (IdentifierStr == "double"){
+        else if (IdentifierStr == "double"){
             TokenDataType = type_double;
             return tok_dtype;
         }
-        if (IdentifierStr == "float"){
+        else if (IdentifierStr == "float"){
             TokenDataType = type_float;
             return tok_dtype;
         }
-        if (IdentifierStr == "bool"){
+        else if (IdentifierStr == "bool"){
             TokenDataType = type_bool;
             return tok_dtype;
         }
-        if (IdentifierStr == "i64"){
+        else if (IdentifierStr == "i64"){
             TokenDataType = type_i64;
             return tok_dtype;
         }
-        if (IdentifierStr == "i32"){
+        else if (IdentifierStr == "i32"){
             TokenDataType = type_i32;
             return tok_dtype;
         }
-        if (IdentifierStr == "i16"){
+        else if (IdentifierStr == "i16"){
             TokenDataType = type_i16;
             return tok_dtype;
         }
-        if (IdentifierStr == "i8"){
+        else if (IdentifierStr == "i8"){
             TokenDataType = type_i8;
             return tok_dtype;
         }
-        if (IdentifierStr == "u64"){
+        else if (IdentifierStr == "u64"){
             TokenDataType = type_u64;
             return tok_dtype;
         }
-        if (IdentifierStr == "u32"){
+        else if (IdentifierStr == "u32"){
             TokenDataType = type_u32;
             return tok_dtype;
         }
-        if (IdentifierStr == "u16"){
+        else if (IdentifierStr == "u16"){
             TokenDataType = type_u16;
             return tok_dtype;
         }
-        if (IdentifierStr == "u8"){
+        else if (IdentifierStr == "u8"){
             TokenDataType = type_u8;
             return tok_dtype;
         }
-        if (IdentifierStr == "void"){
+        else if (IdentifierStr == "void"){
             TokenDataType = type_void;
             return tok_dtype;
         }
-        if (IdentifierStr == "true")
+        else if (IdentifierStr == "true")
             return tok_true;
-        if (IdentifierStr == "false")
+        else if (IdentifierStr == "false")
             return tok_false;
 
         return tok_identifier;
@@ -241,4 +240,16 @@ int gettok() {
 int CurTok;
 int getNextToken() {
     return CurTok = gettok();
+}
+
+void clearTok() {
+    while (true)
+        if (getchar() == '\n')
+            break;
+    LastChar = ' ';
+    CurTok = ' ';
+    IdentifierStr = "";
+    NumVal = 0;
+    INumVal = 0;
+    TokenDataType = type_void;
 }

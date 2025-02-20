@@ -883,10 +883,7 @@ void HandleDefinition() {
                           ThreadSafeModule(std::move(TheModule), std::move(TheContext))));
             InitializeModuleAndManagers();
         }
-    } else {
-        // Skip token for error recovery.
-        getNextToken();
-    }
+    } 
 }
 
 void HandleExtern() {
@@ -897,10 +894,7 @@ void HandleExtern() {
             fprintf(stderr, "\n");
             FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
         }
-    } else {
-        // Skip token for error recovery
-        getNextToken();
-    }
+    } 
 }
 
 void HandleTopLevelExpression() {
@@ -921,7 +915,6 @@ void HandleTopLevelExpression() {
             // Get the symbol's address and cast it into the right type (takes no
             // arguments, returns a double) so we can call it as a native function.
             
-            DebugLog("DataType is " + dtypeToString(dtype));
             if (dtype == type_double){
                 double (*Function)() = ExprSymbol.getAddress().toPtr<double (*)()>();
                 fprintf(stderr, "Evaluated to %f\n", Function());
@@ -974,8 +967,5 @@ void HandleTopLevelExpression() {
             // Delete the anonymous expression module from the JIT
             ExitOnErr(RT->remove());
         }
-    } else {
-        // Skip token for error recovery
-        getNextToken();
-    }
+    } 
 }

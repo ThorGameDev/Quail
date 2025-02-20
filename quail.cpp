@@ -5,16 +5,17 @@
 #include <iostream>
 
 /// top ::= definition | external | expression | ';'
-static void MainLoop() {
-    while (true) {
-        try {
-            std::cout << ">>> ";
+void JitLine() {
+    resetLexer();
+    std::cout << ">>> ";
+    initBuffer();
+    getNextToken();
+    try {
+        while (true) {
             switch (CurTok) {
             case tok_eof:
+                std::cout << "\n";
                 return;
-            case '_': //ignore placeholder exec-char
-                getNextToken();
-                break;
             case tok_def:
                 HandleDefinition();
                 break;
@@ -26,12 +27,15 @@ static void MainLoop() {
                 break;
             }
         }
-        catch (CompileError ce){
-            DebugLog("Error Recovered");
-            clearTok();
-            std::cout << ">>> ";
-            getNextToken();
-        }
+    }
+    catch (CompileError ce){
+        DebugLog("Error Recovered\n");
+    }
+}
+
+void MainLoop(){
+    while (true){
+        JitLine();
     }
 }
 
@@ -40,8 +44,6 @@ int main() {
     InitializeBinopPrecedence();
 
     // Prime the first token.
-    std::cout << ">>> ";
-    getNextToken();
 
     // Make the module, which holds all the code
     InitializeModuleAndManagers();

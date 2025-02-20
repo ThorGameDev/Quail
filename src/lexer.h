@@ -52,5 +52,6 @@ int gettok();
 extern int CurTok;
 int getNextToken();
 
-void clearTok();
+void resetLexer();
+void initBuffer();
 #endif

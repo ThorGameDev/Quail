@@ -6,12 +6,26 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <iostream>
 #include <string>
+
+std::string fileData;
+void initBuffer() {
+    std::getline(std::cin, fileData);
+}
+char nextChar() {
+    if (fileData.size() == 0){
+        return EOF;
+    }
+    char letter = fileData.at(0);
+    fileData.erase(0, 1);
+    return letter;
+}
+
 
 // The lexer returns tokens [0-255] if it is an unknown character, otherwise
 // one of these for known things. It returns tokens greater than 255 for
 // multi-part operators
-
 std::string IdentifierStr; //Filled in if tok_identifier
 double NumVal;             //Filled in if tok_number
 int64_t INumVal;             //Filled in if tok_number
@@ -64,11 +78,11 @@ static char LastChar = ' ';
 int gettok() {
     //Skip any white space
     while (isspace(LastChar))
-        LastChar = getchar();
+        LastChar = nextChar();
 
-    if (isalpha(LastChar)) {
+    if (isalpha(LastChar) || LastChar == '_') {
         IdentifierStr = LastChar;
-        while (isalnum((LastChar = getchar())))
+        while (isalnum((LastChar = nextChar())) || LastChar == '_')
             IdentifierStr += LastChar;
 
         if (IdentifierStr == "def")
@@ -149,18 +163,18 @@ int gettok() {
             if (isInt)
                 INumStr += LastChar;
             NumStr += LastChar;
-            LastChar = getchar();
+            LastChar = nextChar();
         } while (isdigit(LastChar) || LastChar == '.');
 
 
         NumVal = strtod(NumStr.c_str(), 0);
         INumVal = strtoll(INumStr.c_str(), 0, 10);
         if (LastChar == ':'){
-            LastChar = getchar();
+            LastChar = nextChar();
             std::string ExplicitType;
             do {
                 ExplicitType += LastChar;
-                LastChar = getchar();
+                LastChar = nextChar();
             } 
             while(isdigit(LastChar) || LastChar == 'i' || LastChar == 'f' || LastChar == 'd');
             if (ExplicitType == "i64")
@@ -210,7 +224,7 @@ int gettok() {
 
     if (LastChar == '#') {
         do
-            LastChar = getchar();
+            LastChar = nextChar();
         while (LastChar != EOF && LastChar != '\n' && LastChar != '\r');
 
         if (LastChar != EOF)
@@ -223,13 +237,13 @@ int gettok() {
 
     // Otherwise, just return the character as its ascii value.
     char ThisChar = LastChar;
-    LastChar = getchar();
+    LastChar = nextChar();
 
     // But first, check to make sure it isnt a multipart operator
     int value = (LastChar << 8) + ThisChar;
     for (int val = 0; val < longops.size(); val++) {
         if (longops[val] == value) {
-            LastChar = getchar();
+            LastChar = nextChar();
             return value;
         }
     }
@@ -242,10 +256,8 @@ int getNextToken() {
     return CurTok = gettok();
 }
 
-void clearTok() {
-    while (true)
-        if (getchar() == '\n')
-            break;
+void resetLexer() {
+    fileData = "";
     LastChar = ' ';
     CurTok = ' ';
     IdentifierStr = "";

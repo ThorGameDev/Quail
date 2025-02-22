@@ -6,20 +6,38 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <string>
 
 std::string fileData;
+int index = 0;
+bool jitMode;
+
 void initBuffer() {
+    jitMode = true;
+    index = 0;
     std::getline(std::cin, fileData);
+    getNextToken();
 }
+
+void readFile(char* filepath) {
+    jitMode = false;
+    index = 0;
+    std::ifstream file(filepath);
+    std::string str;
+    while (std::getline(file, str)) {
+        fileData += str; 
+        fileData.push_back('\n'); 
+    }
+    getNextToken();
+}
+
 char nextChar() {
-    if (fileData.size() == 0){
+    if (index >= fileData.size()) {
         return EOF;
     }
-    char letter = fileData.at(0);
-    fileData.erase(0, 1);
-    return letter;
+    return fileData[index++];
 }
 
 

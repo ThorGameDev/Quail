@@ -679,8 +679,12 @@ std::unique_ptr<FunctionAST> ParseDefinition() {
             LogErrorParse("Non null function block can not have ';'");
             return nullptr;
         }
+        if (CurTok == ';'){
+            getNextToken(); // eat ;.
+        }
         return std::make_unique<FunctionAST>(std::move(Proto), std::move(Body));
     }
+
     return nullptr;
 }
 

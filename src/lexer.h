@@ -54,4 +54,5 @@ int getNextToken();
 
 void resetLexer();
 void initBuffer();
+void readFile(char* filepath);
 #endif

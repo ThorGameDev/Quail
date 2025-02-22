@@ -28,9 +28,12 @@ def i16 mandelconverger(float real, float imag, i16 iters, float creal, float ci
 		iters
     mandelconverger(real*real - imag*imag + creal, 2*real*imag + cimag, iters+1, creal, cimag)
 }
+
 # Return the number of iterations required for the iteration to escape
 def i16 mandelconverge(float real, float imag)
+{
     mandelconverger(real, imag, 0:i16, real, imag)
+}
 
 # Compute and plot the mandelbrot set with the specified 2 dimensional range
 # info.

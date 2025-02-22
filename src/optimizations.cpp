@@ -5,10 +5,9 @@
 #include "llvm/Transforms/Utils/Mem2Reg.h"
 #include "llvm/Transforms/Scalar/GVN.h"
 #include "llvm/Transforms/Scalar/Reassociate.h"
-
 using namespace llvm;
 
-std::unique_ptr<FunctionPassManager> Optimize(std::unique_ptr<FunctionPassManager> target){
+std::unique_ptr<FunctionPassManager> Optimize(std::unique_ptr<FunctionPassManager> target) {
     // Add transform passes
     // Promote allocas to registers
     target->addPass(PromotePass());

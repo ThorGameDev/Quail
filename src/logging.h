@@ -12,6 +12,7 @@ llvm::Value *LogErrorCompileV(std::string Str);
 llvm::Value *LogCompilerBug(std::string Str);
 
 void DebugLog(std::string Str);
+void FileOutputError(std::string Str);
 
 class CompileError : public std::exception {
 

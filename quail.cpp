@@ -2,8 +2,10 @@
 #include "./src/codegen.h"
 #include "./src/BinopsData.h"
 #include "./src/logging.h"
+#include "./src/output.h"
 #include <cstring>
 #include <iostream>
+#include <string>
 #include <vector>
 
 /// top ::= definition | external | expression | ';'
@@ -18,7 +20,7 @@ void JitLine() {
                 std::cout << "\n";
                 return;
             case tok_def:
-                HandleDefinition();
+                HandleDefinitionJit();
                 break;
             case tok_extern:
                 HandleExtern();
@@ -35,31 +37,41 @@ void JitLine() {
 }
 
 void MainLoop(){
+    InitializeBinopPrecedence();
+    InitializeCodegen();
+    InitializeModuleAndManagers();
     while (true){
         JitLine();
     }
 }
 
-void compileFile(char* filepath) {
+void compileFile(char* filepath, char* savename) {
+    InitializeBinopPrecedence();
+    InitializeCodegen();
+    InitializeModuleAndManagers();
+
     resetLexer();
     readFile(filepath);
     try {
-        while (true) {
+        bool looping = true;
+        while (looping) {
             switch (CurTok) {
             case tok_eof:
                 std::cout << "\n";
-                return;
+                looping = false;
+                break;
             case tok_def:
-                HandleDefinition();
+                HandleDefinitionFile();
                 break;
             case tok_extern:
                 HandleExtern();
                 break;
             default:
-                HandleTopLevelExpression();
+                LogError("Invalid Top-level expression");
                 break;
             }
         }
+        SaveToFile(savename);
     }
     catch (CompileError ce){
         DebugLog("Failed to compile file due to errors\n");
@@ -85,16 +97,15 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    InitializeCodegen();
-    InitializeBinopPrecedence();
-    InitializeModuleAndManagers();
-
     // Run the main "interpreter loop" now.
     if (filepaths.size() == 0) {
         MainLoop();
     }
-    for(int i = 0; i < filepaths.size(); i++) {
-        compileFile(filepaths[i]);
+    if (filepaths.size() == outputs.size() && filepaths.size() > 0){
+        for(int i = 0; i < filepaths.size(); i++) {
+            compileFile(filepaths[i], outputs[i]);
+        }
     }
+
     return 0;
 }

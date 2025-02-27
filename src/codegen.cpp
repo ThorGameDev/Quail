@@ -338,7 +338,7 @@ Value* Div(DataType LHS, DataType RHS, Value* L, Value* R){
     std::pair<Value*, Value*> parts = expandOperation(LHS, RHS, L, R);
     DataType retType = getExpandType(LHS, RHS);
 
-    if (retType) {
+    if (isFP(retType)) {
         return Builder->CreateFDiv(parts.first, parts.second, "divtmp");
     }
     else{
@@ -836,6 +836,10 @@ Function *FunctionAST::codegen() {
     return nullptr;
 }
 
+std::unique_ptr<Module> getModule(){
+    return std::move(TheModule);
+}
+
 void InitializeCodegen(){
     InitializeNativeTarget();
     InitializeNativeTargetAsmPrinter();
@@ -873,7 +877,7 @@ void InitializeModuleAndManagers() {
     PB.crossRegisterProxies(*TheLAM, *TheFAM, *TheCGAM, *TheMAM);
 }
 
-void HandleDefinition() {
+void HandleDefinitionJit() {
     if (auto FnAST = ParseDefinition()) {
         if (auto *FnIR = FnAST->codegen()) {
             fprintf(stderr, "Parsed a function definition.\n");
@@ -882,6 +886,16 @@ void HandleDefinition() {
             ExitOnErr(TheJIT->addModule(
                           ThreadSafeModule(std::move(TheModule), std::move(TheContext))));
             InitializeModuleAndManagers();
+        }
+    } 
+}
+
+void HandleDefinitionFile() {
+    if (auto FnAST = ParseDefinition()) {
+        if (auto *FnIR = FnAST->codegen()) {
+            fprintf(stderr, "Parsed a function definition.\n");
+            FnIR->print(errs());
+            fprintf(stderr, "\n");
         }
     } 
 }

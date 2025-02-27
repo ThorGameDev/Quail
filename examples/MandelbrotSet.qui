@@ -57,6 +57,8 @@ def void mandel(float realstart, float imagstart, float realmag, float imagmag)
 		imagstart, imagstart+imagmag*40, imagmag);
 };
 
-mandel(-2.3:f, -1.3:f, 0.05:f, 0.07:f);
-mandel(-2.0:f, -1.0:f, 0.02:f, 0.04:f);
-mandel(-0.9:f, -1.4:f, 0.02:f, 0.03:f);
+def void main(){
+    mandel(-2.3:f, -1.3:f, 0.05:f, 0.07:f);
+    mandel(-2.0:f, -1.0:f, 0.02:f, 0.04:f);
+    mandel(-0.9:f, -1.4:f, 0.02:f, 0.03:f);
+}

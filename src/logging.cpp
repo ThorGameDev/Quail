@@ -55,3 +55,8 @@ void DebugLog(std::string Str){
      std::cerr << Str << "\n";
 }
 
+void FileOutputError(std::string Str){
+    std::cout << "File Output Error: " << Str << "\n";
+    throw CompileError();
+}
+

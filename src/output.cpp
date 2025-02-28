@@ -2,6 +2,9 @@
 #include "./logging.h"
 #include "codegen.h"
 
+#include <filesystem>
+#include <iostream>
+
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -14,7 +17,7 @@
 
 using namespace llvm;
 
-void SaveToFile(std::string filename){
+void SaveToObjectFile(std::string filename) { 
     auto TargetTriple = sys::getDefaultTargetTriple();
 
     InitializeAllTargetInfos();
@@ -57,4 +60,32 @@ void SaveToFile(std::string filename){
     pass.run(*TheModule);
     dest.flush();
     DebugLog(std::string("'") + filename + "' compiled succesfully");
+}
+
+void SaveToIRFile(std::string filename) { 
+    std::unique_ptr<Module> TheModule = getModule();
+    std::error_code EC;
+    raw_fd_ostream dest(filename, EC, sys::fs::OF_None);
+    if (EC) {
+        FileOutputError("Could not open file: " + EC.message());
+    }
+    TheModule->print(dest, nullptr);
+    dest.flush();
+}
+
+std::string getFileExtension(std::string filePath){
+    std::filesystem::path Path(filePath);
+    return Path.extension().string();
+}
+
+void SaveToFile(std::string filename){
+    std::string extension = getFileExtension(filename);
+
+    std::cout << extension;
+    if (extension == ".o"){
+        SaveToObjectFile(filename);
+    }
+    if (extension == ".ll"){
+        SaveToIRFile(filename);
+    }
 }

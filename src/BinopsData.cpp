@@ -40,6 +40,8 @@ void InitializeBinopPrecedence() {
         {60, std::map<std::pair<DataType, DataType>, DataType>()};
     BinopProperties['/'] =
         {60, std::map<std::pair<DataType, DataType>, DataType>()};
+    BinopProperties['%'] =
+        {60, std::map<std::pair<DataType, DataType>, DataType>()};
 
     for(int i = 0; i <= numPriorities; i++){
         DataType Bigger = priorities[i];
@@ -82,6 +84,8 @@ void InitializeBinopPrecedence() {
             BinopProperties['*'].CompatibilityChart[pair2] = expanded;
             BinopProperties['/'].CompatibilityChart[pair1] = expanded;
             BinopProperties['/'].CompatibilityChart[pair2] = expanded;
+            BinopProperties['%'].CompatibilityChart[pair1] = expanded;
+            BinopProperties['%'].CompatibilityChart[pair2] = expanded;
 
             BinopProperties['>'].CompatibilityChart[pair1] = type_bool;
             BinopProperties['>'].CompatibilityChart[pair2] = type_bool;

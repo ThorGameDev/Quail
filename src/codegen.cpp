@@ -349,6 +349,21 @@ Value* Div(DataType LHS, DataType RHS, Value* L, Value* R){
         }
     }
 };
+Value* Mod(DataType LHS, DataType RHS, Value* L, Value* R){
+    std::pair<Value*, Value*> parts = expandOperation(LHS, RHS, L, R);
+    DataType retType = getExpandType(LHS, RHS);
+
+    if (isFP(retType)) {
+        return Builder->CreateFRem(parts.first, parts.second, "modtmp");
+    }
+    else{
+        if (isSigned(retType)){
+            return Builder->CreateSRem(parts.first, parts.second, "modtmp");
+        } else {
+            return Builder->CreateURem(parts.first, parts.second, "modtmp");
+        }
+    }
+};
 
 Value* Neg(DataType dtype, Value* input){
     if (isFP(dtype)) {
@@ -399,6 +414,8 @@ Value *BinaryExprAST::codegen() {
         return BinOps::Mul(LT, RT, L, R);
     case '/':
         return BinOps::Div(LT, RT, L, R);
+    case '%':
+        return BinOps::Mod(LT, RT, L, R);
     case '<':
     case '>':
     case op_eq:

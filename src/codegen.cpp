@@ -489,6 +489,8 @@ Value *CallExprAST::codegen() {
             return nullptr;
     }
 
+    if (getDatatype() == type_void)
+        return Builder->CreateCall(CalleeF, ArgsV);
     return Builder->CreateCall(CalleeF, ArgsV, "calltmp");
 }
 
@@ -849,7 +851,10 @@ Function *FunctionAST::codegen() {
 
     if (Value *RetVal = Body->codegen()) {
         //Finish off the function.
-        Builder->CreateRet(RetVal);
+        if (P.getDataType() == type_void)
+            Builder->CreateRetVoid();
+        else
+            Builder->CreateRet(RetVal);
 
         //Validate the generated code, checking for consistency.
         verifyFunction(*TheFunction);

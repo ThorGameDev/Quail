@@ -23,6 +23,7 @@ char dtypeToChar(DataType dtype);
 
 bool isFP(DataType dtype);
 bool isSigned(DataType dtype);
+bool isInt(DataType dtype);
 DataType getExpandType(DataType left, DataType right);
 
 #endif

@@ -6,7 +6,7 @@
 #include <vector>
 
 enum Token {
-    // Operators CURRENTLY WRONG
+    // Operators might be CURRENTLY WRONG
     op_eq = 15677,
     op_or = 31868,
     op_neq = 15649,
@@ -31,12 +31,14 @@ enum Token {
     tok_if = -12,
     tok_else = -13,
     tok_for = -14,
+    tok_flee = -15,
 
     //operators
-    tok_operator = -15,
+    tok_operator = -16,
 
     // var definition
-    tok_dtype = -16,
+    tok_dtype = -17,
+    
 };
 
 int optok(std::string op);

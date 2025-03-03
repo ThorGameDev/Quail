@@ -4,6 +4,7 @@
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Value.h>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -186,6 +187,15 @@ public:
     std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
     BlockAST(std::vector<std::unique_ptr<LineAST>> Lines, DataType dtype)
         : Lines(std::move(Lines)), ExprAST(dtype) {}
+    llvm::Value *codegen() override;
+};
+
+class FleeAST : public ExprAST {
+    std::unique_ptr<ExprAST> Body;
+    int Depth;
+public:
+    FleeAST(std::unique_ptr<ExprAST> Body, int Depth, DataType dtype) :
+        Body(std::move(Body)), Depth(Depth), ExprAST(dtype) {}
     llvm::Value *codegen() override;
 };
 

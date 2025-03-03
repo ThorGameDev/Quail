@@ -79,6 +79,14 @@ bool isFP(DataType dtype){
     if (dtype == type_double || dtype == type_float) { return true; }
     else { return false; }
 }
+bool isInt(DataType dtype){
+    if (dtype == type_i8 || dtype == type_i16 || 
+            dtype == type_i32 || dtype == type_i64 || 
+            dtype == type_u8 || dtype == type_u16 || 
+            dtype == type_u32 || dtype == type_u64)
+    { return true; }
+    else { return false; }
+}
 
 unsigned getIndex(DataType dtype){
     return std::distance(priorities, std::find(priorities, priorities + numPriorities, dtype));

@@ -575,6 +575,18 @@ Value *LineAST::codegen() {
     }
 }
 
+Value *FleeAST::codegen() {
+    Value *body = Body->codegen();
+    return body;
+    /*
+    if (returns == true) {
+        return body;
+    } else {
+        return UndefValue::get(Type::getVoidTy(*TheContext));
+    }
+    */
+}
+
 Value *IfExprAST::codegen() {
     if (Cond->getDatatype() != type_bool) {
         return LogErrorCompileV("If condition should be a boolean value! Got '" + dtypeToString(Cond->getDatatype()) + "' instead.");

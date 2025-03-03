@@ -113,6 +113,8 @@ int gettok() {
             return tok_else;
         else if (IdentifierStr == "for")
             return tok_for;
+        else if (IdentifierStr == "flee")
+            return tok_flee;
         else if (IdentifierStr == "operator")
             return tok_operator;
         else if (IdentifierStr == "double"){
@@ -218,11 +220,7 @@ int gettok() {
         }
         else {
             if (isInt){
-                if ((int8_t)INumVal == INumVal){
-                    TokenDataType = type_i8; 
-                } else if ((int16_t)INumVal == INumVal) {
-                    TokenDataType = type_i16; 
-                } else if ((int32_t)INumVal == INumVal) {
+                if ((int32_t)INumVal == INumVal){
                     TokenDataType = type_i32; 
                 } else {
                     TokenDataType = type_i64; 

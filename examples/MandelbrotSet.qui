@@ -11,21 +11,18 @@ def void printdensity(i32 d)
 		putchard(46:i8);
 	};
 	else if (d > 2)
-	{
 		putchard(43:i8);
-	};
 	else
-	{
 		putchard(42:i8);
-	};
 };
 
 # Determine whether the specific location diverges.
 # Solve for z = z^2 + c in the complex plane.
 def i32 mandelconverger(float real, float imag, i32 iters, float creal, float cimag)
 {
-	if (iters > 255 | (real*real + imag*imag > 4))
-		iters
+	if (iters > 255 | (real*real + imag*imag > 4)) {
+		flee iters;
+    };
     mandelconverger(real*real - imag*imag + creal, 2.0*real*imag + cimag, iters+1, creal, cimag)
 }
 
@@ -41,7 +38,7 @@ def void mandelhelp(float xmin, float xmax, float xstep, float ymin, float ymax,
 {
 	for (float y = ymin; y < ymax; y = y + ystep )
 	{
-		for (float x = xmin; x < xmax; x =x + xstep) 
+		for (float x = xmin; x < xmax; x = x + xstep) 
 		{
 			printdensity(mandelconverge(x,y));
 		};

@@ -22,6 +22,11 @@ extern "C" DLLEXPORT void i32out(int32_t X) {
     fprintf(stderr, "%i\n", X);
 }
 
+/// printd - printf that takes a double prints it as "%f\n", returning 0.
+extern "C" DLLEXPORT void floatout(float X) {
+    fprintf(stderr, "%f\n", X);
+}
+
 // Void - get a void
 extern "C" DLLEXPORT void Void() {
 }

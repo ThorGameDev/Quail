@@ -1,23 +1,30 @@
-def i8 operator >> 100 (i8 left, i8 right) { 
-    i8 shiftright = 1; 
-    for (i8 i = 0; i < right; i = i + 1 ){
-        shiftright = shiftright * 2;
+extern void i32out(i32 x);
+extern void Void();
+
+def i32 operator >> 100 (i32 left, i8 right) { 
+    i8 shiftright = 1:i8; 
+    for (i8 i = 0:i8; i < right; i = i + 1:i8 ){
+        shiftright = shiftright * 2:i8;
     };
-    i8 retval = left / shiftright;
+    i32 retval = left / shiftright;
     retval
 }
 
-def i8 operator << 100 (i8 left, i8 right) { 
-    i8 retval = left; 
-    for (i8 i = 0; i < right; i = i + 1 ){
+def i32 operator << 100 (i32 left, i8 right) { 
+    i32 retval = left; 
+    for (i8 i = 0:i8; i < right; i = i + 1:i8 ){
         retval = retval * 2;
+        if (i == right - 1:i8)
+            flee retval;
     };
-    retval
+    0
 }
 
-def i8 operator @ (i8 input){
+def i32 operator @ (i32 input){
     input * input
 }
 
-@@2 >> 2
-16 << 2
+def void main() {
+    i32out(@@2 >> 2:i8);
+    i32out(16 << 2:i8);
+};

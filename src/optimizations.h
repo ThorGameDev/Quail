@@ -4,5 +4,6 @@
 #include <llvm/IR/PassManager.h>
 
 std::unique_ptr<llvm::FunctionPassManager> Optimize(std::unique_ptr<llvm::FunctionPassManager> target);
+void SetLevel(uint level);
 
 #endif

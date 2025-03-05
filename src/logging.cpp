@@ -52,7 +52,7 @@ llvm::Value *LogCompilerBug(std::string Str) {
 }
 
 void DebugLog(std::string Str){
-     std::cerr << Str << "\n";
+     std::cerr << Str << std::endl;
 }
 
 void FileOutputError(std::string Str){

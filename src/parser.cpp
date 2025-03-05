@@ -106,6 +106,7 @@ struct ParserBlockStackData {
     std::vector<std::string> localVariables;
 };
 static std::vector<ParserBlockStackData*> ParseBlockStack;
+static int BS_index = -1;
 static std::unique_ptr<BlockAST> ParseBlock() {
     if (CurTok != '{'){
         LogErrorParse("expected '{'. Got '" + tokop(CurTok) + "'");
@@ -116,6 +117,7 @@ static std::unique_ptr<BlockAST> ParseBlock() {
     std::vector<std::unique_ptr<LineAST>> lines;
     ParserBlockStackData data = ParserBlockStackData();
     ParseBlockStack.push_back(&data);
+    BS_index += 1;
     while (CurTok != '}') {
         std::unique_ptr<LineAST> line = ParseLine();
         if(line->getReturns()) {
@@ -131,6 +133,7 @@ static std::unique_ptr<BlockAST> ParseBlock() {
         lines.push_back(std::move(line));
     }
     ParseBlockStack.pop_back();
+    BS_index -= 1;
     getNextToken(); // Eat '}'
     // Remove all local variables from scope
     for (int i = 0; i < data.localVariables.size(); i++){
@@ -145,41 +148,53 @@ static std::unique_ptr<BlockAST> ParseBlock() {
 }
 
 static std::unique_ptr<ExprAST> ParseFleeExpr() {
+    if(ParseBlockStack.empty()) 
+        return LogErrorParse("Flee instruction must be contained within block");
     getNextToken(); // Eat flee
-    uint8_t fleeAmmount = ParseBlockStack.size();
-    if (CurTok == '('){
+    uint8_t fleeAmmount = 0;
+    if (CurTok == '['){
         getNextToken();
-        if (CurTok != tok_dtype)
-            LogErrorParse("expected integer constant within flee. Got '" + tokop(CurTok) + "'");
+        if (CurTok != tok_number)
+            return LogErrorParse("expected integer constant within flee. Got '" + tokop(CurTok) + "'");
         if (!isInt(TokenDataType))
-            LogErrorParse("expected integer constant within flee. Got '" + dtypeToString(TokenDataType) + "' type instead");
-        if( INumVal > fleeAmmount || INumVal < 0){
-            LogErrorParse("Flee distance should be within range (0 ~ " + std::to_string(fleeAmmount) + 
+            return LogErrorParse("expected integer constant within flee. Got '" + dtypeToString(TokenDataType) + "' type instead");
+        if( INumVal > BS_index || INumVal < 0){
+            return LogErrorParse("Flee distance should be within range (0 ~ " + std::to_string(fleeAmmount) + 
                     "). Got '" + std::to_string(INumVal) + "' type instead");
         }
         fleeAmmount = (uint8_t)INumVal;
         getNextToken();
 
-        if (CurTok != ')')
-            LogErrorParse("expected ')'. Got '" + tokop(CurTok) + "'");
+        if (CurTok != ']')
+            return LogErrorParse("expected ']'. Got '" + tokop(CurTok) + "'");
         getNextToken();
     }
     if(CurTok == ';'){
-        return std::make_unique<FleeAST>(nullptr, fleeAmmount, type_void);
+        if (ParseBlockStack[fleeAmmount]->blockDtype == type_UNDECIDED)
+            ParseBlockStack[fleeAmmount]->blockDtype = type_void;
+        else if (ParseBlockStack[fleeAmmount]->blockDtype != type_void)
+            return LogErrorParse("flee["+ std::to_string(fleeAmmount) +"] statement's return type '" + dtypeToString(type_void) +
+                    "' differs from the target block return type of '" + dtypeToString(ParseBlockStack[fleeAmmount]->blockDtype) + "'");
+
+        return std::make_unique<FleeAST>(nullptr, fleeAmmount);
     }
 
     std::unique_ptr<ExprAST> body = ParseExpression();
+    if(!body)
+        return nullptr;
 
-    /*
-    if(!ParseBlockStack.empty()) {
-        if (ParseBlockStack[fleeAmmount]->blockDtype == type_UNDECIDED)
-            ParseBlockStack[fleeAmmount]->blockDtype = Then->getDatatype();
-        else if (ParseBlockStack[fleeAmmount]->blockDtype != Then->getDatatype())
-            return LogErrorParse("If statement's return type '" + dtypeToString(Then->getDatatype()) + "' " + 
-                    "differs from the current block return type of '" + dtypeToString(ParseBlockStack.top()->blockDtype) + "'");
-    }
-    */
-    return std::make_unique<FleeAST>(std::move(body), fleeAmmount, type_void);
+    if(CurTok != ';')
+        return LogErrorParse("Flee statement should end with ';'. Got '" + tokop(CurTok) + "'");
+
+    DataType dtype = body->getDatatype();
+
+    if (ParseBlockStack[fleeAmmount]->blockDtype == type_UNDECIDED)
+        ParseBlockStack[fleeAmmount]->blockDtype = dtype;
+    else if (ParseBlockStack[fleeAmmount]->blockDtype != dtype)
+        return LogErrorParse("flee["+ std::to_string(fleeAmmount) +"] statement's return type '" + dtypeToString(dtype) +
+                "' differs from the target block return type of '" + dtypeToString(ParseBlockStack[fleeAmmount]->blockDtype) + "'");
+
+    return std::make_unique<FleeAST>(std::move(body), fleeAmmount);
 }
 
 /// identifierexpr
@@ -260,11 +275,11 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
         return nullptr;
 
     if(Then->getReturns() && !ParseBlockStack.empty()) {
-        if (ParseBlockStack[0]->blockDtype == type_UNDECIDED)
-            ParseBlockStack[0]->blockDtype = Then->getDatatype();
-        else if (ParseBlockStack[0]->blockDtype != Then->getDatatype())
+        if (ParseBlockStack[BS_index]->blockDtype == type_UNDECIDED)
+            ParseBlockStack[BS_index]->blockDtype = Then->getDatatype();
+        else if (ParseBlockStack[BS_index]->blockDtype != Then->getDatatype())
             return LogErrorParse("If statement's return type '" + dtypeToString(Then->getDatatype()) + "' " + 
-                    "differs from the current block return type of '" + dtypeToString(ParseBlockStack[0]->blockDtype) + "'");
+                    "differs from the current block return type of '" + dtypeToString(ParseBlockStack[BS_index]->blockDtype) + "'");
     }
 
     if (CurTok == tok_else){
@@ -274,11 +289,11 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
             return nullptr;
 
         if(Else->getReturns() && !ParseBlockStack.empty()) {
-            if (ParseBlockStack[0]->blockDtype == type_UNDECIDED)
-                ParseBlockStack[0]->blockDtype = Else->getDatatype();
-            else if (ParseBlockStack[0]->blockDtype != Else->getDatatype())
+            if (ParseBlockStack[BS_index]->blockDtype == type_UNDECIDED)
+                ParseBlockStack[BS_index]->blockDtype = Else->getDatatype();
+            else if (ParseBlockStack[BS_index]->blockDtype != Else->getDatatype())
                 return LogErrorParse("If statement's return type '" + dtypeToString(Else->getDatatype()) + "' " + 
-                        "differs from the current block return type of '" + dtypeToString(ParseBlockStack[0]->blockDtype) + "'");
+                        "differs from the current block return type of '" + dtypeToString(ParseBlockStack[BS_index]->blockDtype) + "'");
         }
 
         return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then), std::move(Else));
@@ -390,12 +405,12 @@ static std::unique_ptr<ExprAST> ParseVarExpr() {
     // Store each name
     while (true) {
         std::string Name = IdentifierStr;
-        ParseBlockStack[0]->localVariables.push_back(Name);
+        ParseBlockStack[BS_index]->localVariables.push_back(Name);
         if (NamedValuesDatatype.count(Name) == 0){
             NamedValuesDatatype[Name] = dtype;
         }
         else {
-            ParseBlockStack[0]->outerVariables[Name] = NamedValuesDatatype[Name];
+            ParseBlockStack[BS_index]->outerVariables[Name] = NamedValuesDatatype[Name];
         }
         VarNames.push_back(Name);
         getNextToken(); // eat identifier

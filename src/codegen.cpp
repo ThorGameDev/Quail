@@ -494,16 +494,17 @@ Value *CallExprAST::codegen() {
     return Builder->CreateCall(CalleeF, ArgsV, "calltmp");
 }
 
-static std::stack<BlockAST*> BlockStack;
+static std::vector<BlockAST*> BlockStack;
+static int BS_index = -1;
 Value *BlockAST::codegen() {
     std::string name = "block" + std::to_string(BlockStack.size());
     // Add self to block stack, so that content code can access it
-    BlockStack.push(this);
+    BlockStack.push_back(this);
+    BS_index += 1;
 
     // Create blocks
     Function *TheFunction = Builder->GetInsertBlock()->getParent();
     BasicBlock *CurrentBlock = BasicBlock::Create(*TheContext, name, TheFunction);
-    BasicBlock *AfterBB = BasicBlock::Create(*TheContext, name + "end");
 
     // Allow the flow to enter current block
     Builder->CreateBr(CurrentBlock);
@@ -513,44 +514,45 @@ Value *BlockAST::codegen() {
     Builder->SetInsertPoint(CurrentBlock);
 
     Value *RetVal = UndefValue::get(Type::getVoidTy(*TheContext));
-    bool hasImmediateReturn = false;
     for (unsigned i = 0, e = Lines.size(); i != e; i++) {
         Value *Line = Lines[i]->codegen();
         if (!Line)
             return nullptr;
         if (Lines[i]->getReturns()) {
             RetVal = Line;
-            hasImmediateReturn = true;
             break; // Do not generate unreachable code
         }
+        if (fleeFrom)
+            break;
     }
+    // Code gen may have changed the current block
     CurrentBlock = Builder->GetInsertBlock();
-    // Pass return value to PHI node
 
-    // Exit block
-    TheFunction->insert(TheFunction->end(), AfterBB);
-    Builder->CreateBr(AfterBB);
-    Builder->SetInsertPoint(AfterBB);
+    // Exit the block
 
     // Remove self from block stack
-    BlockStack.pop();
+    BlockStack.pop_back();
+    BS_index -= 1;
 
     // Pop all local variables from scope.
     for (unsigned i = 0, e = VarNames.size(); i != e; i++)
         NamedValues[VarNames[i].first] = LocalVarAlloca[i];
 
-    if (hasImmediateReturn || ReturnFromPoints.size() > 0){
+    // Get the return type
+    Type* retType = RetVal->getType();
+    if (retType != getType(getDatatype())) {
+        retType = ReturnFromPoints[0].second->getType();
+    }
 
-        // Get the return type
-        Type* retType = RetVal->getType();
-        if (!hasImmediateReturn) {
-            retType = ReturnFromPoints[0].second->getType();
-            RetVal = Constant::getNullValue(ReturnFromPoints[0].second->getType());
-            if (retType == Type::getVoidTy(*TheContext)){
-                RetVal = UndefValue::get(Type::getVoidTy(*TheContext));
-            }
-        }
+    // Create the end block
+    BasicBlock *AfterBB = BasicBlock::Create(*TheContext, name + "end", TheFunction);
+    if (!fleeFrom) {
+        Builder->CreateBr(AfterBB);
+    }
+    Builder->SetInsertPoint(AfterBB);
 
+    // Allow other methods of entering AfterBB
+    if (ReturnFromPoints.size() > 0) {
         // Create the PHI node to store return values
         PHINode *PN = Builder->CreatePHI(retType, ReturnFromPoints.size() + 1, "retval");
 
@@ -560,12 +562,13 @@ Value *BlockAST::codegen() {
             PN->addIncoming(ReturnFromPoints[i].second, ReturnFromPoints[i].first);
             Builder->CreateBr(AfterBB);
         }
-        Builder->SetInsertPoint(AfterBB);
         PN->addIncoming(RetVal, CurrentBlock);
+        Builder->SetInsertPoint(AfterBB);
 
-        return PN;
+        RetVal = PN;
     }
-    return UndefValue::get(Type::getVoidTy(*TheContext));
+
+    return RetVal;
 }
 
 Value *LineAST::codegen() {
@@ -578,15 +581,23 @@ Value *LineAST::codegen() {
 }
 
 Value *FleeAST::codegen() {
-    Value *body = Body->codegen();
-    return body;
-    /*
-    if (returns == true) {
-        return body;
-    } else {
-        return UndefValue::get(Type::getVoidTy(*TheContext));
+    BlockStack[BS_index]->fleeFrom = true;
+    if(Body != nullptr){
+        Value *body = Body->codegen();
+        if (!body)
+            return nullptr;
+
+        BasicBlock *block = Builder->GetInsertBlock();
+
+        BlockStack[Depth]->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(block, body));
     }
-    */
+    else{
+        Value* body = UndefValue::get(Type::getVoidTy(*TheContext));
+        BasicBlock *block = Builder->GetInsertBlock();
+
+        BlockStack[Depth]->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(block, body));
+    }
+    return UndefValue::get(Type::getVoidTy(*TheContext));
 }
 
 Value *IfExprAST::codegen() {
@@ -623,12 +634,17 @@ Value *IfExprAST::codegen() {
     ThenBB = Builder->GetInsertBlock();
 
     // If "then" block does not have a semicolon, then if it is called, it should trigger a block return
+    bool fleeFromThen = false;
     if (Then->getReturns() && BlockStack.size() > 0) {
-        BlockStack.top()->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(ThenBB, ThenV));
-    } else {
+        BlockStack[BS_index]->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(ThenBB, ThenV));
+    } else if (!BlockStack[BS_index]->fleeFrom) {
         Builder->CreateBr(MergeBB);
+    } else {
+        fleeFromThen = true;
+        BlockStack[BS_index]->fleeFrom = false;
     }
 
+    bool fleeFromElse = false;
     if (Else) {
         // Emit else block, if an else statement exists
         TheFunction->insert(TheFunction->end(), ElseBB);
@@ -643,14 +659,22 @@ Value *IfExprAST::codegen() {
 
         // If "else" block does not have a semicolon, then if it is called, it should trigger a block return
         if (Else->getReturns() && BlockStack.size() > 0) {
-            BlockStack.top()->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(ElseBB, ElseV));
-        } else {
+            BlockStack[BS_index]->ReturnFromPoints.push_back(std::pair<BasicBlock*, Value*>(ElseBB, ElseV));
+        } else if (!BlockStack[BS_index]->fleeFrom) {
             Builder->CreateBr(MergeBB);
+        } else {
+            BlockStack[BS_index]->fleeFrom = false;
+            fleeFromElse = true;
         }
     }
     
-    TheFunction->insert(TheFunction->end(), MergeBB);
-    Builder->SetInsertPoint(MergeBB);
+    if (fleeFromElse && fleeFromThen) {
+        BlockStack[BS_index]->fleeFrom = true; 
+    }
+    else {
+        TheFunction->insert(TheFunction->end(), MergeBB);
+        Builder->SetInsertPoint(MergeBB);
+    }
 
     return UndefValue::get(Type::getVoidTy(*TheContext));
 }
@@ -790,10 +814,10 @@ Value *VarExprAST::codegen() {
     }
 
     // Feed deepest level current local variables
-    BlockStack.top()->LocalVarAlloca.insert(std::end(BlockStack.top()->LocalVarAlloca),
+    BlockStack[BS_index]->LocalVarAlloca.insert(std::end(BlockStack[BS_index]->LocalVarAlloca),
                                             std::begin(OldBindings), std::end(OldBindings));
     for (int i = VarNames.size() - 1; i >= 0; i--) {
-        BlockStack.top()->VarNames.push_back(std::move(VarNames[i]));
+        BlockStack[BS_index]->VarNames.push_back(std::move(VarNames[i]));
     }
 
     // Return nothing
@@ -1017,3 +1041,4 @@ void HandleTopLevelExpression() {
         }
     } 
 }
+

@@ -1,0 +1,16 @@
+extern void putchard(i8 char);
+
+def i8 blocktest(i8 char){
+    {
+        {{ char}} + 1:i8
+    } - 1:i8
+    *
+    {{1:i8}}
+}
+
+def void main(){
+    putchard(blocktest(68:i8));    
+    putchard(blocktest(69:i8));    
+    putchard(blocktest(70:i8));    
+    putchard(blocktest(71:i8));    
+};

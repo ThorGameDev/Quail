@@ -71,6 +71,7 @@ void SaveToIRFile(std::string filename) {
     }
     TheModule->print(dest, nullptr);
     dest.flush();
+    DebugLog(std::string("'") + filename + "' compiled succesfully");
 }
 
 std::string getFileExtension(std::string filePath){
@@ -81,7 +82,6 @@ std::string getFileExtension(std::string filePath){
 void SaveToFile(std::string filename){
     std::string extension = getFileExtension(filename);
 
-    std::cout << extension;
     if (extension == ".o"){
         SaveToObjectFile(filename);
     }

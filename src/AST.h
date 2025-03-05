@@ -185,6 +185,7 @@ public:
     std::vector<llvm::AllocaInst *> LocalVarAlloca;
     std::vector<std::pair<llvm::BasicBlock*, llvm::Value*>> ReturnFromPoints;
     std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
+    bool fleeFrom = false;
     BlockAST(std::vector<std::unique_ptr<LineAST>> Lines, DataType dtype)
         : Lines(std::move(Lines)), ExprAST(dtype) {}
     llvm::Value *codegen() override;
@@ -194,8 +195,8 @@ class FleeAST : public ExprAST {
     std::unique_ptr<ExprAST> Body;
     int Depth;
 public:
-    FleeAST(std::unique_ptr<ExprAST> Body, int Depth, DataType dtype) :
-        Body(std::move(Body)), Depth(Depth), ExprAST(dtype) {}
+    FleeAST(std::unique_ptr<ExprAST> Body, int Depth) :
+        Body(std::move(Body)), Depth(Depth), ExprAST(type_void) {}
     llvm::Value *codegen() override;
 };
 

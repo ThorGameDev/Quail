@@ -3,6 +3,7 @@
 #include "./src/BinopsData.h"
 #include "./src/logging.h"
 #include "./src/output.h"
+#include "./src/optimizations.h"
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -83,10 +84,23 @@ int main(int argc, char* argv[]) {
     int argType = 0;
     std::vector<char*> filepaths;
     std::vector<char*> outputs;
+    uint optimizationLevel = 2;
     for (int i = 1; i < argc; i++){
         char* arg = argv[i];
         if (strcmp(arg, "-o") == 0){
             argType = 1;  
+            continue;
+        }
+        else if (strcmp(arg, "-O0") == 0){
+            optimizationLevel = 0;
+            continue;
+        }
+        else if (strcmp(arg, "-O1") == 0){
+            optimizationLevel = 1;
+            continue;
+        }
+        else if (strcmp(arg, "-O2") == 0){
+            optimizationLevel = 2;
             continue;
         }
 
@@ -96,6 +110,8 @@ int main(int argc, char* argv[]) {
             outputs.push_back(arg);
         }
     }
+
+    SetLevel(optimizationLevel);
 
     // Run the main "interpreter loop" now.
     if (filepaths.size() == 0) {

@@ -1,4 +1,4 @@
 def i32 average(i32 x, i32 y) 
 {
-    (x + y) / 2
+    flee (x + y) / 2;
 }

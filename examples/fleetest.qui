@@ -1,0 +1,15 @@
+extern void putchard(i8 char);
+
+def i32 fleetest(){
+    {{{{
+        flee 10;
+    }}}};
+    0
+}
+
+def void main() {
+    if (fleetest() == 0){
+        putchard(66:i8);
+    }
+    putchard(65:i8);
+};

@@ -227,6 +227,16 @@ public:
     llvm::Value *codegen() override;
 };
 
+class WhileExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> Condition, Body;
+
+public:
+    WhileExprAST(std::unique_ptr<ExprAST> Condition, std::unique_ptr<ExprAST> Body)
+        : Condition(std::move(Condition)), Body(std::move(Body)), ExprAST(type_void) {}
+
+    llvm::Value *codegen() override;
+};
+
 class VarExprAST : public ExprAST {
     std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
 

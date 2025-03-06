@@ -83,6 +83,10 @@ std::string tokop(int op) {
                 return "tok_else";
             case tok_for:
                 return "tok_for";
+            case tok_while:
+                return "tok_while";
+            case tok_flee:
+                return "tok_flee";
             case tok_operator:
                 return "tok_operator";
             case tok_dtype:
@@ -122,6 +126,8 @@ int gettok() {
             return tok_else;
         else if (IdentifierStr == "for")
             return tok_for;
+        else if (IdentifierStr == "while")
+            return tok_while;
         else if (IdentifierStr == "flee")
             return tok_flee;
         else if (IdentifierStr == "operator")

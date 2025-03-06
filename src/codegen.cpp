@@ -756,6 +756,54 @@ Value *ForExprAST::codegen() {
     return UndefValue::get(Type::getVoidTy(*TheContext));
 }
 
+Value *WhileExprAST::codegen() {
+    if (Condition->getDatatype() != type_bool) {
+        return LogErrorCompileV("For loop condition should be bool type. Got '"
+                + dtypeToString(Condition->getDatatype()) + "' instead");
+    }
+
+    Function *TheFunction = Builder->GetInsertBlock()->getParent();
+    BasicBlock *Preloop = Builder->GetInsertBlock();
+
+    // Make the new basic block for the loop header, inserting after current block
+    BasicBlock *LoopBB = BasicBlock::Create(*TheContext, "loop", TheFunction);
+
+    // Start insertion in LoopBB.
+    Builder->SetInsertPoint(LoopBB);
+
+    // Emit the body of the loop. This, like any other expr, can change the
+    // current BB. Note that we ignore the value computed by the body, but don't
+    // allow an error.
+    Value* BodyV = Body->codegen();
+    if (!BodyV)
+        return nullptr;
+
+    BasicBlock *CondBB = BasicBlock::Create(*TheContext, "conditionblock", TheFunction);
+    Builder->CreateBr(CondBB);
+    Builder->SetInsertPoint(CondBB);
+
+    // Compute the end condition
+    Value *EndCond = Condition->codegen();
+    if (!EndCond)
+        return nullptr;
+
+    // Create the "after loop" block and insert it.
+    BasicBlock *AfterBB =
+        BasicBlock::Create(*TheContext, "afterloop", TheFunction);
+
+    // Insert the conditional branch into the end of LoopEndBB.
+    Builder->CreateCondBr(EndCond, LoopBB, AfterBB);
+
+    // Allow acces into the loop, but make sure to enter the check branch.
+    Builder->SetInsertPoint(Preloop);
+    Builder->CreateBr(CondBB);
+
+    // Any new code will be inserted in AfterBB.
+    Builder->SetInsertPoint(AfterBB);
+
+    return UndefValue::get(Type::getVoidTy(*TheContext));
+}
+
 Value *VarExprAST::codegen() {
     std::vector<AllocaInst *> OldBindings;
 

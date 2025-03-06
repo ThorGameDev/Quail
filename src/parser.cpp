@@ -11,7 +11,6 @@
 #include <cstdlib>
 #include <map>
 #include <memory>
-#include <stack>
 #include <string>
 #include <utility>
 #include <vector>
@@ -332,27 +331,26 @@ static std::unique_ptr<ExprAST> ParseForExpr() {
         return LogErrorParse("expected '='. Got '" + tokop(CurTok) + "'");
     getNextToken(); // eat '='.
 
-    auto Start = ParseExpression();
+    std::unique_ptr<ExprAST> Start = ParseExpression();
     if (!Start)
         return nullptr;
     if (CurTok != ';')
         return LogErrorParse("expected ';'. Got '" + tokop(CurTok) + "'");
     getNextToken();
 
-    auto End = ParseExpression();
+    std::unique_ptr<ExprAST> End = ParseExpression();
     if (!End)
         return nullptr;
     if (End->getDatatype() != type_bool){
         return LogErrorParse("For loop condition should be 'bool' rather than '" + dtypeToString(End->getDatatype()) + "'");
     }
 
-    std::unique_ptr<ExprAST> Step;
     if (CurTok != ';') {
         return LogErrorParse("expected ';'. Got '" + tokop(CurTok) + "'");
     }
     getNextToken(); // Eat ;
 
-    Step = ParseExpression();
+    std::unique_ptr<ExprAST> Step = ParseExpression();
     if (!Step)
         return nullptr;
 
@@ -379,6 +377,38 @@ static std::unique_ptr<ExprAST> ParseForExpr() {
 
     return std::make_unique<ForExprAST>(IdName, indexDtype, std::move(Start),
                         std::move(End), std::move(Step),std::move(Body));
+}
+
+static std::unique_ptr<ExprAST> ParseWhileExpr() {
+    getNextToken(); // eat the while.
+
+    if (CurTok != '(')
+        return LogErrorParse("expected '('. Got '" + tokop(CurTok) + "'");
+    getNextToken(); // Eat the '('
+
+    std::unique_ptr<ExprAST> Condition = ParseExpression();
+    if (!Condition)
+        return nullptr;
+    if (Condition->getDatatype() != type_bool){
+        return LogErrorParse("While loop condition should be 'bool' rather than '" + dtypeToString(Condition->getDatatype()) + "'");
+    }
+
+    if (CurTok != ')')
+        return LogErrorParse("expected ')'. Got '" + tokop(CurTok) + "'");
+    getNextToken(); // Eat the ')'
+
+
+    std::unique_ptr<ExprAST> Body = ParseExpression();
+    if (!Body)
+        return nullptr;
+
+    if (CurTok == ';')
+        getNextToken();
+    else
+        return LogErrorParse("expected ';'. Got '" + tokop(CurTok) + "'\n" + 
+                "while loop statement must end with a ';', because return types are impossible.");
+
+    return std::make_unique<WhileExprAST>(std::move(Condition), std::move(Body));
 }
 
 /// varexpr :: 'var' identifier ('=' expression)?
@@ -493,6 +523,8 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
         return ParseIfExpr();
     case tok_for:
         return ParseForExpr();
+    case tok_while:
+        return ParseWhileExpr();
     case tok_flee:
         return ParseFleeExpr();
     case tok_dtype:

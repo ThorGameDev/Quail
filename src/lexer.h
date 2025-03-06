@@ -31,13 +31,14 @@ enum Token {
     tok_if = -12,
     tok_else = -13,
     tok_for = -14,
-    tok_flee = -15,
+    tok_while = -15,
+    tok_flee = -16,
 
     //operators
-    tok_operator = -16,
+    tok_operator = -17,
 
     // var definition
-    tok_dtype = -17,
+    tok_dtype = -18,
     
 };
 

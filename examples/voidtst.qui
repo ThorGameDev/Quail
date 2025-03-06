@@ -1,0 +1,9 @@
+extern void Void();
+def void voidstore(){
+    void out = Void();
+    flee out;
+}
+
+dev void main(){
+    voidstore();
+};

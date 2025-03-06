@@ -395,6 +395,9 @@ static std::unique_ptr<ExprAST> ParseVarExpr() {
         return LogErrorParse("Expected datatype token. Instead got '" + tokop(CurTok) + "'");
     getNextToken(); // eat the var.
 
+    if (dtype == type_void)
+        return LogErrorParse("Variable expression can not be type void");
+
     std::vector<std::string> VarNames;
     std::vector<std::unique_ptr<ExprAST>> VarValues;
 
@@ -650,7 +653,8 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
         // Read the precedence if present.
         if (CurTok == tok_number) {
             if (INumVal < 1 || INumVal > 1000)
-                return LogErrorParseP("Invalid precedence '" + std::to_string(INumVal) + "': must be 1..1000");
+                return LogErrorParseP("'"+FnSufix+"' recieved invalid precedence '"
+                        + std::to_string(INumVal) + "': must be 1..1000");
             BinaryPrecedence = (unsigned)INumVal;
             getNextToken();
         }
@@ -659,7 +663,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 
 
     if (CurTok != '(')
-        return LogErrorParseP("Expected '(' in prototype. Got '" + tokop(CurTok) + "'");
+        return LogErrorParseP("Expected '(' in "+FnName+" prototype. Got '" + tokop(CurTok) + "'");
     getNextToken(); // Eat '('
 
     std::vector<std::pair<std::string, DataType>> Arguments;
@@ -672,8 +676,11 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
             break;
         getNextToken(); // Eat datatype
 
+        if (dtype == type_void)
+            return LogErrorParseP(FnName + "prototype can not accept void argument");
+
         if (CurTok != tok_identifier){
-            return LogErrorParseP("Expected name after variable datatype '"+dtypeToString(dtype)+"' declaration");
+            return LogErrorParseP(FnName + " expected name after variable datatype '"+dtypeToString(dtype)+"' declaration");
         }
         Arguments.push_back(std::make_pair(IdentifierStr, dtype));
         argsig.push_back(dtype);
@@ -685,14 +692,15 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
         getNextToken();
     }
     if (CurTok != ')')
-        return LogErrorParseP("Expected ')' in prototype. Got '" + tokop(CurTok) + "'");
+        return LogErrorParseP("Expected ')' in "+FnName+" prototype. Got '" + tokop(CurTok) + "'");
 
     //success.
     getNextToken(); // eat ')'.
 
     // Verify right number of names for operator.
     if (isOperator && Arguments.size() != 1 && Arguments.size() != 2) {
-        return LogErrorParseP("Expected 1 or 2 argument for operator. Got '" + std::to_string(Arguments.size()) + "'");
+        return LogErrorParseP("Expected 1 or 2 argument for '"+tokop(OperatorName)+"' operator. Got '"
+                + std::to_string(Arguments.size()) + "'");
     }
 
     if (isOperator && Arguments.size() == 1 && BinaryPrecedence != -1) {

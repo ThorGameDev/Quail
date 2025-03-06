@@ -14,6 +14,7 @@ std::string fileData;
 int index = 0;
 bool jitMode;
 
+
 void initBuffer() {
     jitMode = true;
     index = 0;
@@ -33,11 +34,19 @@ void readFile(char* filepath) {
     getNextToken();
 }
 
+location lex_location;
 char nextChar() {
     if (index >= fileData.size()) {
         return EOF;
     }
-    return fileData[index++];
+    char c = fileData[index++];
+    if (c == '\n'){
+        lex_location.line += 1;
+        lex_location.col = 1;
+    }
+    else
+        lex_location.col += 1;
+    return c;
 }
 
 
@@ -272,6 +281,10 @@ int getNextToken() {
     return CurTok = gettok();
 }
 
+location getLexPos() {
+    return lex_location;
+}
+
 void resetLexer() {
     fileData = "";
     LastChar = ' ';
@@ -279,5 +292,7 @@ void resetLexer() {
     IdentifierStr = "";
     NumVal = 0;
     INumVal = 0;
+    lex_location.line = 1;
+    lex_location.col = 1;
     TokenDataType = type_void;
 }

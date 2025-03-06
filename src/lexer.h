@@ -41,6 +41,11 @@ enum Token {
     
 };
 
+struct location {
+    int line;
+    int col;
+};
+
 int optok(std::string op);
 std::string tokop(int op);
 
@@ -57,4 +62,7 @@ int getNextToken();
 void resetLexer();
 void initBuffer();
 void readFile(char* filepath);
+
+location getLexPos();
+
 #endif

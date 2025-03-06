@@ -1,17 +1,23 @@
 #include "./logging.h"
+#include "./lexer.h"
 #include <exception>
 #include <iostream>
 #include <string>
 
+std::string strLexPos() {
+    location pos = getLexPos(); 
+    return "Line: " + std::to_string(pos.line) + " Col: " + std::to_string(pos.col);
+}
+
 /// LogError* - These are little helper funcions for error handling.
 std::unique_ptr<ExprAST> LogError(std::string Str) {
-    std::cout << "Error: " << Str << "\n";
+    std::cout << "Error: " << Str << "\n" << strLexPos() << "\n";
     throw CompileError();
     return nullptr;
 }
 
 std::unique_ptr<ExprAST> LogErrorParse(std::string Str) {
-    std::cout << "Syntax Error: " << Str << "\n";
+    std::cout << "Syntax Error: " << Str << "\n" << strLexPos() << "\n";
     throw CompileError();
     return nullptr;
 }

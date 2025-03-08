@@ -1,6 +1,6 @@
 #ifndef BINOP
 #define BINOP
-#include "./datatype.h"
+#include "datatype.h"
 #include <map>
 #include <vector>
 

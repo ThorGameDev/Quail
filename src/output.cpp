@@ -1,9 +1,8 @@
 #include "./output.h"
 #include "./logging.h"
-#include "codegen.h"
+#include "./codegen/CG_internal.h"
 
 #include <filesystem>
-#include <iostream>
 
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
@@ -38,10 +37,8 @@ void SaveToObjectFile(std::string filename) {
     TargetOptions opt;
     auto TargetMachine = Target->createTargetMachine(TargetTriple, CPU, Features, opt, Reloc::PIC_);
 
-    std::unique_ptr<Module> TheModule = getModule();
-
-    TheModule->setDataLayout(TargetMachine->createDataLayout());
-    TheModule->setTargetTriple(TargetTriple);
+    CG::TheModule->setDataLayout(TargetMachine->createDataLayout());
+    CG::TheModule->setTargetTriple(TargetTriple);
 
     std::error_code EC;
     raw_fd_ostream dest(filename, EC, sys::fs::OF_None);
@@ -57,19 +54,18 @@ void SaveToObjectFile(std::string filename) {
         FileOutputError("TargetMachine can't emit a file of this type");
     }
 
-    pass.run(*TheModule);
+    pass.run(*CG::TheModule);
     dest.flush();
     DebugLog(std::string("'") + filename + "' compiled succesfully");
 }
 
 void SaveToIRFile(std::string filename) { 
-    std::unique_ptr<Module> TheModule = getModule();
     std::error_code EC;
     raw_fd_ostream dest(filename, EC, sys::fs::OF_None);
     if (EC) {
         FileOutputError("Could not open file: " + EC.message());
     }
-    TheModule->print(dest, nullptr);
+    CG::TheModule->print(dest, nullptr);
     dest.flush();
     DebugLog(std::string("'") + filename + "' compiled succesfully");
 }

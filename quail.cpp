@@ -1,9 +1,10 @@
 #include "./src/lexer.h"
+#include "./src/AST.h"
 #include "./src/codegen.h"
 #include "./src/BinopsData.h"
 #include "./src/logging.h"
 #include "./src/output.h"
-#include "./src/optimizations.h"
+#include "./src/codegen/optimizations.h"
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -21,13 +22,13 @@ void JitLine() {
                 std::cout << "\n";
                 return;
             case tok_def:
-                HandleDefinitionJit();
+                CG::HandleDefinitionJit();
                 break;
             case tok_extern:
-                HandleExtern();
+                CG::HandleExtern();
                 break;
             default:
-                HandleTopLevelExpression();
+                CG::HandleTopLevelExpression();
                 break;
             }
         }
@@ -39,8 +40,8 @@ void JitLine() {
 
 void MainLoop(){
     InitializeBinopPrecedence();
-    InitializeCodegen();
-    InitializeModuleAndManagers();
+    CG::InitializeCodegen();
+    CG::InitializeModuleAndManagers();
     while (true){
         JitLine();
     }
@@ -48,8 +49,8 @@ void MainLoop(){
 
 void compileFile(char* filepath, char* savename) {
     InitializeBinopPrecedence();
-    InitializeCodegen();
-    InitializeModuleAndManagers();
+    CG::InitializeCodegen();
+    CG::InitializeModuleAndManagers();
 
     resetLexer();
     readFile(filepath);
@@ -62,10 +63,10 @@ void compileFile(char* filepath, char* savename) {
                 looping = false;
                 break;
             case tok_def:
-                HandleDefinitionFile();
+                CG::HandleDefinitionFile();
                 break;
             case tok_extern:
-                HandleExtern();
+                CG::HandleExtern();
                 break;
             default:
                 LogError("Invalid Top-level expression");

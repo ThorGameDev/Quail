@@ -2,7 +2,7 @@
 CXX = clang++
 
 # Define the source files
-SOURCES = quail.cpp ./src/lexer.cpp ./src/externs.cpp ./src/parser.cpp ./src/logging.cpp ./src/BinopsData.cpp ./src/codegen.cpp ./src/datatype.cpp ./src/optimizations.cpp ./src/output.cpp
+SOURCES = quail.cpp ./src/lexer.cpp ./src/externs.cpp ./src/parser.cpp ./src/logging.cpp ./src/BinopsData.cpp ./src/datatype.cpp ./src/output.cpp ./src/codegen.cpp ./src/codegen/optimizations.cpp ./src/codegen/constants.cpp ./src/codegen/other.cpp ./src/codegen/inblock.cpp ./src/codegen/BinOps.cpp ./src/codegen/functions.cpp ./src/codegen/core.cpp 
 
 # Define the object files
 OBJECTS = $(SOURCES:.cpp=.o)

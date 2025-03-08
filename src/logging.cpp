@@ -1,8 +1,10 @@
 #include "./logging.h"
 #include "./lexer.h"
-#include <exception>
+#include "./AST.h"
 #include <iostream>
 #include <string>
+
+using namespace AST;
 
 std::string strLexPos() {
     location pos = getLexPos(); 

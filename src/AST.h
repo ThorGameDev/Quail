@@ -1,12 +1,20 @@
-#ifndef AST
-#define AST
-#include "./datatype.h"
-#include <llvm/IR/Instructions.h>
-#include <llvm/IR/Value.h>
+#ifndef AST_H
+#define AST_H
+
+namespace llvm {
+    class Value;
+    class AllocaInst;
+    class BasicBlock;
+    class Function;
+}
+
+#include "datatype.h"
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
+
+namespace AST { 
 
 /// ExprAST - Base class for all expression nodes
 class ExprAST { //To add types other than doubles, this would have a type field
@@ -309,4 +317,6 @@ public:
         return Proto->getDataType();
     }
 };
+
+}
 #endif

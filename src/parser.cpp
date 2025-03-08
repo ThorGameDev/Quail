@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+using namespace AST;
 
 /// CurTok/getNextToken - Provide a simple token buffer. CurTok is the current
 /// token the parser is looking at. getNextToken reads another token from the

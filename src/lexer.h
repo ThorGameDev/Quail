@@ -1,7 +1,7 @@
 #ifndef LEXER
 #define LEXER
 
-#include "./datatype.h"
+#include "datatype.h"
 #include <string>
 #include <vector>
 

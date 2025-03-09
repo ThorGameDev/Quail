@@ -193,4 +193,11 @@ void HandleTopLevelExpression() {
     } 
 }
 
+void CloseCodegen() {
+    TheModule.reset(); 
+    TheJIT.reset();
+    TheContext.reset();
+    Builder.reset();
+}
+
 }

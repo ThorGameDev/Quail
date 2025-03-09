@@ -10,6 +10,8 @@ void HandleDefinitionFile();
 void HandleExtern();
 void HandleTopLevelExpression();
 
+void CloseCodegen();
+
 }
 
 #endif

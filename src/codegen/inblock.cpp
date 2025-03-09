@@ -1,32 +1,7 @@
-#include "./CG_internal.h"
 #include "../datatype.h"
 #include "../AST.h"
 #include "../logging.h"
 #include "CG_internal.h"
-#include "llvm/ADT/APFloat.h"
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/PassManager.h"
-#include "llvm/IR/Type.h"
-#include "llvm/IR/Verifier.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/StandardInstrumentations.h"
-#include "llvm/Target/TargetMachine.h"
-#include <cassert>
-#include <cctype>
-#include <cstdio>
-#include <cstdlib>
-#include <llvm/Analysis/TargetTransformInfo.h>
-#include <llvm/IR/Constant.h>
-#include <llvm/IR/Instruction.h>
-#include <llvm/IR/Value.h>
-#include <map>
-#include <memory>
-#include <string>
-#include <utility>
 
 namespace AST {
 
@@ -53,12 +28,14 @@ Value *BlockAST::codegen() {
     Builder->SetInsertPoint(CurrentBlock);
 
     Value *RetVal = UndefValue::get(Type::getVoidTy(*CG::TheContext));
+    bool hasImmediateReturn = false;
     for (unsigned i = 0, e = Lines.size(); i != e; i++) {
         Value *Line = Lines[i]->codegen();
         if (!Line)
             return nullptr;
         if (Lines[i]->getReturns()) {
             RetVal = Line;
+            hasImmediateReturn = true;
             break; // Do not generate unreachable code
         }
         if (fleeFrom)
@@ -93,7 +70,7 @@ Value *BlockAST::codegen() {
     // Allow other methods of entering AfterBB
     if (ReturnFromPoints.size() > 0) {
         // Create the PHI node to store return values
-        PHINode *PN = Builder->CreatePHI(retType, ReturnFromPoints.size() + 1, "retval");
+        PHINode *PN = Builder->CreatePHI(retType, ReturnFromPoints.size() + hasImmediateReturn, "retval");
 
         // Create a return value at every return point
         for (int i = 0; i < ReturnFromPoints.size(); i++) {
@@ -101,7 +78,8 @@ Value *BlockAST::codegen() {
             PN->addIncoming(ReturnFromPoints[i].second, ReturnFromPoints[i].first);
             Builder->CreateBr(AfterBB);
         }
-        PN->addIncoming(RetVal, CurrentBlock);
+        if (hasImmediateReturn)
+            PN->addIncoming(RetVal, CurrentBlock);
         Builder->SetInsertPoint(AfterBB);
 
         RetVal = PN;

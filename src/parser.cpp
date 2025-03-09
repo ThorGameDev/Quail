@@ -4,7 +4,6 @@
 #include "./logging.h"
 #include "./lexer.h"
 #include "./AST.h"
-#include <cassert>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
@@ -25,7 +24,6 @@ static std::map<std::string, std::pair<DataType, std::vector<DataType>>> Functio
 
 
 static std::unique_ptr<ExprAST> ParseExpression();
-static std::unique_ptr<LineAST> ParseLine();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
     if (TokenDataType == type_double){
@@ -88,7 +86,6 @@ static std::unique_ptr<ExprAST> ParseBoolExpr() {
     return std::move(Result);
 }
 
-/// parenexpr ::= '(' expression ')'
 static std::unique_ptr<ExprAST> ParseParenExpr() {
     getNextToken(); // eat (.
     auto V = ParseExpression();
@@ -98,6 +95,21 @@ static std::unique_ptr<ExprAST> ParseParenExpr() {
         return LogErrorParse("expected ')'. Got '" + tokop(CurTok) + "'");
     getNextToken(); //eat ).
     return V;
+}
+
+static std::unique_ptr<LineAST> ParseLine() {
+    bool returns = true;
+    // Prevent double semicolon possibility
+    if (CurTok == tok_def || CurTok == tok_for || CurTok == tok_if || CurTok == tok_extern) {
+        returns = false;
+    }
+    auto body = ParseExpression();
+
+    if (CurTok == ';') {
+        getNextToken(); // Eat ;
+        returns = false;
+    }
+    return std::make_unique<LineAST>(std::move(body), returns);
 }
 
 struct ParserBlockStackData {
@@ -197,9 +209,6 @@ static std::unique_ptr<ExprAST> ParseFleeExpr() {
     return std::make_unique<FleeAST>(std::move(body), fleeAmmount);
 }
 
-/// identifierexpr
-/// ::=identifier
-/// ::=identifier '(' expression* ')'
 static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
     std::string IdName = IdentifierStr;
 
@@ -301,7 +310,6 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
     return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then), std::move(nullptr));
 }
 
-// forexper ::= 'for' identifier '=' expr ',' exper (',' expr)? 'in' expression
 static std::unique_ptr<ExprAST> ParseForExpr() {
     getNextToken(); // eat the for.
 
@@ -412,8 +420,6 @@ static std::unique_ptr<ExprAST> ParseWhileExpr() {
     return std::make_unique<WhileExprAST>(std::move(Condition), std::move(Body));
 }
 
-/// varexpr :: 'var' identifier ('=' expression)?
-///                 (',' identifier ('=' expression)?)* 'in' expression
 static std::unique_ptr<ExprAST> ParseVarExpr() {
     if (ParseBlockStack.size() == 0) {
         return LogErrorParse("Variable must be contained in a block");
@@ -498,13 +504,6 @@ static std::unique_ptr<ExprAST> ParseVarExpr() {
     return std::make_unique<VarExprAST>(std::move(VarPairs), dtype);
 }
 
-/// primary
-///     ::= identifierexpr
-///     ::= numberexpr
-///     ::= parenexpr
-///     ::= ifexpr
-///     ::= forexpr
-///     ::= varexpr
 static std::unique_ptr<ExprAST> ParsePrimary() {
     switch(CurTok) {
     default:
@@ -533,7 +532,6 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
     }
 }
 
-/// GetTokPrecedence - Get the precedence of the pending binary operator token.
 static int GetTokPrecedence() {
     if (CurTok < 0)
         return -1;
@@ -543,9 +541,6 @@ static int GetTokPrecedence() {
     return BinopProperties[CurTok].Precedence;
 }
 
-/// unary
-///     ::= primary
-///     ::= '!' unary
 static std::unique_ptr<ExprAST> ParseUnary() {
     // If the current token is not an operator, it must be a primary expr.
     if (CurTok < 0 || CurTok == '(' || CurTok == ',' || CurTok == '{')
@@ -570,8 +565,6 @@ static std::unique_ptr<ExprAST> ParseUnary() {
     return nullptr;
 }
 
-///binoprhs
-///     ::= ('+' primary)*
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
         std::unique_ptr<ExprAST> LHS) {
     // If this is a binop, find its precedence.
@@ -625,25 +618,6 @@ static std::unique_ptr<ExprAST> ParseExpression() {
     return ParseBinOpRHS(0, std::move(LHS));
 }
 
-static std::unique_ptr<LineAST> ParseLine() {
-    bool returns = true;
-    // Prevent double semicolon possibility
-    if (CurTok == tok_def || CurTok == tok_for || CurTok == tok_if || CurTok == tok_extern) {
-        returns = false;
-    }
-    auto body = ParseExpression();
-
-    if (CurTok == ';') {
-        getNextToken(); // Eat ;
-        returns = false;
-    }
-    return std::make_unique<LineAST>(std::move(body), returns);
-}
-
-/// prototype
-/// ::= id '(' id* ')'
-/// ::= binary LETTER number? (id, id)
-/// ::= unary LETTER (id)
 static std::unique_ptr<PrototypeAST> ParsePrototype() {
     std::string FnName;
     DataType ReturnType;
@@ -764,7 +738,6 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
     return std::make_unique<PrototypeAST>(FnName, std::move(Arguments), ReturnType, isOperator, BinaryPrecedence);
 }
 
-/// definition ::= 'def' prototype expression
 std::unique_ptr<FunctionAST> ParseDefinition() {
     getNextToken(); // eat def.
     auto Proto = ParsePrototype();
@@ -784,7 +757,6 @@ std::unique_ptr<FunctionAST> ParseDefinition() {
     return nullptr;
 }
 
-/// external ::= 'extern' prototype
 std::unique_ptr<PrototypeAST> ParseExtern() {
     getNextToken(); // eat extern.
     std::unique_ptr<PrototypeAST> body = ParsePrototype();
@@ -793,7 +765,6 @@ std::unique_ptr<PrototypeAST> ParseExtern() {
     return std::move(body);
 }
 
-/// toplevelexpr ::= expression
 std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
     if (auto E = ParseLine()) {
         // Make an anonymous proto.
